@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+const API_BASE = import.meta.env.VITE_API_URL || '';
+
 interface Chapter {
   id: string;
   name: string;
@@ -26,7 +28,7 @@ export default function Reader() {
       return;
     }
 
-    fetch(`/api/manga/${encodeURIComponent(mangaName)}`)
+    fetch(`${API_BASE}/api/manga/${encodeURIComponent(mangaName)}`)
       .then(res => res.json())
       .then(data => {
         if (data.error) {
@@ -51,7 +53,7 @@ export default function Reader() {
     const mangaName = sessionStorage.getItem('mangaName');
     if (!mangaName) return;
 
-    fetch(`/api/manga/${encodeURIComponent(mangaName)}/${encodeURIComponent(currentChapter.id)}/images`)
+    fetch(`${API_BASE}/api/manga/${encodeURIComponent(mangaName)}/${encodeURIComponent(currentChapter.id)}/images`)
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
