@@ -33,7 +33,7 @@ jobs:
           node-version: '22'
 
       - name: Install
-        run: pnpm install --frozen-lockfile
+        run: pnpm install
         working-directory: web
 
       - name: Build
