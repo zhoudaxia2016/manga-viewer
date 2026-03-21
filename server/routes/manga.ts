@@ -1,10 +1,11 @@
 import { corsHeaders, json } from '../lib/cors.ts';
 
-const DATA_DIR = Deno.env.get('DATA_DIR') || './data';
-const DB_PATH = Deno.env.get('DB_PATH') || './manga.db';
-
 async function getDb() {
-  return await Deno.openKv(DB_PATH.replace('./', './'));
+  const dbPath = Deno.env.get('DB_PATH');
+  if (dbPath) {
+    return await Deno.openKv(dbPath);
+  }
+  return await Deno.openKv();
 }
 
 async function getChaptersFromKv(kv: Deno.Kv, mangaName: string): Promise<{ id: string; name: string; images: string[] }[]> {

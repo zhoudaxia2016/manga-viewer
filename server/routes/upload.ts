@@ -5,11 +5,14 @@ const QINIU_ACCESS_KEY = Deno.env.get('QINIU_ACCESS_KEY') || '';
 const QINIU_SECRET_KEY = Deno.env.get('QINIU_SECRET_KEY') || '';
 const QINIU_BUCKET = Deno.env.get('QINIU_BUCKET') || '';
 const QINIU_DOMAIN = Deno.env.get('QINIU_DOMAIN') || '';
-const DB_PATH = Deno.env.get('DB_PATH') || './manga.db';
 const UPLOAD_HOST = 'https://upload-z2.qiniup.com';
 
 async function getDb() {
-  return await Deno.openKv(DB_PATH.replace('./', './'));
+  const dbPath = Deno.env.get('DB_PATH');
+  if (dbPath) {
+    return await Deno.openKv(dbPath);
+  }
+  return await Deno.openKv();
 }
 
 function generateUploadToken(key: string): string {
