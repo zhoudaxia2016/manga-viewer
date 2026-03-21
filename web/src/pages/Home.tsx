@@ -6,6 +6,8 @@ import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Toast, ToastContainer } from '@/components/ui/toast';
 
+const API_BASE = import.meta.env.VITE_API_URL || '';
+
 interface Manga {
   name: string;
   chapterCount: number;
@@ -39,7 +41,7 @@ export default function Home() {
 
   const fetchMangaList = useCallback(async () => {
     try {
-      const res = await fetch('/api/manga');
+      const res = await fetch(`${API_BASE}/api/manga`);
       if (res.ok) {
         const data = await res.json();
         setMangaList(data);
@@ -99,7 +101,7 @@ export default function Home() {
         formData.append('mangaName', mangaName);
         formData.append('chapterName', chapterName);
 
-        const res = await fetch('/api/upload', {
+        const res = await fetch(`${API_BASE}/api/upload`, {
           method: 'POST',
           body: formData,
         });
@@ -150,7 +152,7 @@ export default function Home() {
 
   const handleDelete = useCallback(async (mangaName: string) => {
     try {
-      const res = await fetch(`/api/manga/${encodeURIComponent(mangaName)}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/api/manga/${encodeURIComponent(mangaName)}`, { method: 'DELETE' });
       if (res.ok) {
         setMangaList(prev => prev.filter(m => m.name !== mangaName));
         showToast('Deleted successfully', 'success');
