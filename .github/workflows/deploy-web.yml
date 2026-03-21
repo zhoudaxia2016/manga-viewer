@@ -42,6 +42,11 @@ jobs:
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
 
+      # 直接打开 /manga-viewer/reader 或刷新子路由时，Pages 会找静态文件 404；复制 index 作为 404 页交给客户端路由
+      - name: SPA fallback for GitHub Pages
+        run: cp dist/index.html dist/404.html
+        working-directory: web
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
