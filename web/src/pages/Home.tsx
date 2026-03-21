@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import JSZip from 'jszip';
+import { Button } from '@/components/ui/button';
 
 interface Manga {
   name: string;
@@ -177,9 +178,9 @@ export default function Home() {
         <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
           <div className="modal confirm-modal" onClick={e => e.stopPropagation()}>
             <p>Delete "{confirmDelete}"?</p>
-            <div className="confirm-buttons">
-              <button className="cancel-btn" onClick={() => setConfirmDelete(null)}>Cancel</button>
-              <button className="delete-confirm-btn" onClick={() => handleDelete(confirmDelete)}>Delete</button>
+              <div className="confirm-buttons">
+              <Button variant="outline" onClick={() => setConfirmDelete(null)}>Cancel</Button>
+              <Button variant="destructive" onClick={() => handleDelete(confirmDelete)}>Delete</Button>
             </div>
           </div>
         </div>
@@ -187,9 +188,9 @@ export default function Home() {
 
       <div className="header">
         <h1>Manga Viewer</h1>
-        <button className="upload-btn" onClick={() => setShowUpload(true)}>
+        <Button onClick={() => setShowUpload(true)}>
           + Upload
-        </button>
+        </Button>
       </div>
 
       {showUpload && (
@@ -226,13 +227,13 @@ export default function Home() {
               style={{ display: 'none' }}
               onChange={handleFileSelect}
             />
-            <button
-              className="cancel-btn"
+            <Button
+              variant="outline"
               onClick={() => setShowUpload(false)}
               disabled={uploading}
             >
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -246,7 +247,9 @@ export default function Home() {
           >
             <span className="manga-name">{manga.name}</span>
             <span className="manga-chapters">{manga.chapterCount} chapters</span>
-            <button
+            <Button
+              size="icon"
+              variant="ghost"
               className="delete-btn"
               onClick={(e) => {
                 e.stopPropagation();
@@ -254,7 +257,7 @@ export default function Home() {
               }}
             >
               ×
-            </button>
+            </Button>
           </div>
         ))}
         {mangaList.length === 0 && (
