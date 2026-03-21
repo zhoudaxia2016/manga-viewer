@@ -2,6 +2,9 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import JSZip from 'jszip';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Toast, ToastContainer } from '@/components/ui/toast';
 
 interface Manga {
   name: string;
@@ -167,76 +170,77 @@ export default function Home() {
   }, [navigate]);
 
   return (
-    <div className="home">
-      {toast && (
-        <div className={`toast toast-${toast.type}`}>
-          {toast.message}
-        </div>
-      )}
+    <div className="min-h-screen bg-background text-foreground p-8">
+      <ToastContainer>
+        {toast && (
+          <Toast variant={toast.type === 'error' ? 'destructive' : 'default'}>
+            {toast.message}
+          </Toast>
+        )}
+      </ToastContainer>
 
-      {confirmDelete && (
-        <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
-          <div className="modal confirm-modal" onClick={e => e.stopPropagation()}>
-            <p>Delete "{confirmDelete}"?</p>
-              <div className="confirm-buttons">
-              <Button variant="outline" onClick={() => setConfirmDelete(null)}>Cancel</Button>
-              <Button variant="destructive" onClick={() => handleDelete(confirmDelete)}>Delete</Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Dialog open={!!confirmDelete} onOpenChange={() => setConfirmDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Manga</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{confirmDelete}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDelete(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => handleDelete(confirmDelete!)}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <div className="header">
-        <h1>Manga Viewer</h1>
-        <Button onClick={() => setShowUpload(true)}>
-          + Upload
-        </Button>
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-2xl font-bold">Manga Viewer</h1>
+        <Button onClick={() => setShowUpload(true)}>+ Upload</Button>
       </div>
 
-      {showUpload && (
-        <div className="modal-overlay" onClick={() => !uploading && setShowUpload(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <h2>Upload Manga (ZIP)</h2>
-            {uploading && progress ? (
-              <div className="progress-container">
-                <p>Uploading {progress.current}/{progress.total}</p>
-                <p className="current-file">{progress.currentFile}</p>
-                <div className="progress-bar">
-                  <div 
-                    className="progress-fill" 
-                    style={{ width: `${(progress.current / progress.total) * 100}%` }}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div
-                className={`drop-zone ${uploading ? 'disabled' : ''}`}
-                onDrop={handleDrop}
-                onDragOver={e => e.preventDefault()}
-                onClick={() => !uploading && fileInputRef.current?.click()}
-              >
-                <p>Drag & drop ZIP file here</p>
-                <p className="hint">or click to select</p>
-                <p className="hint">Format: 漫画名/章节名/*.jpg</p>
-              </div>
-            )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".zip"
-              style={{ display: 'none' }}
-              onChange={handleFileSelect}
-            />
-            <Button
-              variant="outline"
-              onClick={() => setShowUpload(false)}
-              disabled={uploading}
+      <Dialog open={showUpload} onOpenChange={() => !uploading && setShowUpload(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upload Manga (ZIP)</DialogTitle>
+            <DialogDescription>
+              Drag and drop a ZIP file containing manga images
+            </DialogDescription>
+          </DialogHeader>
+          {uploading && progress ? (
+            <div className="space-y-4 py-4">
+              <p className="text-sm">Uploading {progress.current}/{progress.total}</p>
+              <Progress value={(progress.current / progress.total) * 100} />
+              <p className="text-xs text-muted-foreground truncate">{progress.currentFile}</p>
+            </div>
+          ) : (
+            <div
+              className={`drop-zone ${uploading ? 'disabled' : ''}`}
+              onDrop={handleDrop}
+              onDragOver={e => e.preventDefault()}
+              onClick={() => !uploading && fileInputRef.current?.click()}
             >
-              Cancel
-            </Button>
-          </div>
-        </div>
-      )}
+              <p>Drag & drop ZIP file here</p>
+              <p className="hint">or click to select</p>
+              <p className="hint">Format: 漫画名/章节名/*.jpg</p>
+            </div>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".zip"
+            style={{ display: 'none' }}
+            onChange={handleFileSelect}
+          />
+          <Button
+            variant="outline"
+            onClick={() => setShowUpload(false)}
+            disabled={uploading}
+          >
+            Cancel
+          </Button>
+        </DialogContent>
+      </Dialog>
 
       <div className="manga-list">
         {mangaList.map((manga) => (
