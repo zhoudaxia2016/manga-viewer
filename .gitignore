@@ -1,0 +1,60 @@
+# Dependencies
+web/node_modules/
+web/pnpm-lock.yaml
+
+# Vite
+web/.vite/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# Crawler specific
+crawler/__pycache__/
+crawler/crawlers/__pycache__/
+crawler/utils/__pycache__/
+crawler/.ruff_cache/
+
+# Ruff
+.ruff_cache/
+
+# Crush (if not needed)
+.crush/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# TypeScript
+*.tsbuildinfo
+
+# Manga data (downloaded comics)
+data/
