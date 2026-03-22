@@ -48,6 +48,13 @@ class Raw1001Crawler(BaseCrawler):
             title_elem = await page.query_selector("h1, .chapter-title")
             title = await title_elem.inner_text() if title_elem else "unknown"
 
+            cover_elem = await page.query_selector("img.full.r2.md-w120")
+            cover_url = None
+            if cover_elem:
+                src = await cover_elem.get_attribute("src")
+                if src:
+                    cover_url = urljoin("https://raw1001.net", src)
+
             chapters = []
             chapter_links = await page.query_selector_all("a[href*='/manga/']")
 
@@ -71,7 +78,9 @@ class Raw1001Crawler(BaseCrawler):
                     seen.add(ch.id)
                     unique_chapters.append(ch)
 
-            return Manga(name=title.strip(), chapters=unique_chapters)
+            return Manga(
+                name=title.strip(), cover_url=cover_url, chapters=unique_chapters
+            )
 
         finally:
             await page.close()
