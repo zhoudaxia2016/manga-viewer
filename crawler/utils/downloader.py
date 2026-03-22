@@ -24,6 +24,9 @@ class Downloader:
     async def download(self, url: str, path: str, retries: int = 0) -> DownloadResult:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
 
+        if Path(path).exists():
+            return DownloadResult(url=url, path=path, success=True, retries=0)
+
         async with self.semaphore:
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:

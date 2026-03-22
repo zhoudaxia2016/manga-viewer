@@ -81,7 +81,12 @@ def extract_manga_homepage(url: str) -> str:
 
 
 async def crawl_manga(
-    crawler, url: str, save_dir: str, chapters: list = None, delay=(1, 2)
+    crawler,
+    url: str,
+    save_dir: str,
+    chapters: list = None,
+    delay=(1, 2),
+    cover_only: bool = False,
 ):
     manga_url = extract_manga_homepage(url)
     if manga_url != url:
@@ -93,16 +98,52 @@ async def crawl_manga(
     print(f"漫画名: {manga.name}")
     print(f"章节数: {len(manga.chapters)}")
 
+    if cover_only:
+        import os
+
+        safe_name = "".join(c for c in manga.name if c not in r'\/:*?"<>|')
+        cover_path = os.path.join(save_dir, safe_name, "cover.jpg")
+        os.makedirs(os.path.dirname(cover_path), exist_ok=True)
+        if manga.cover_url:
+            downloaded = await crawler.download_image(manga.cover_url, cover_path)
+            if downloaded:
+                print(f"封面已保存: {cover_path}")
+            else:
+                print(f"封面下载失败")
+        else:
+            print("无封面信息")
+        return manga.name, 0, 0
+
+    is_chapter_url = bool(re.search(r"/di\d+hua?|/chapter-\d+", url))
+
     if chapters:
-        targets = [c for c in manga.chapters if c.id in chapters or c.title in chapters]
+        expanded = set()
+        for c in chapters:
+            if "-" in c:
+                parts = c.split("-")
+                if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                    start, end = int(parts[0]), int(parts[1])
+                    expanded.update(range(start, end + 1))
+                else:
+                    expanded.add(c)
+            else:
+                expanded.add(c)
+        expanded_chapters = [str(x) for x in sorted(expanded)]
+        targets = [
+            c
+            for c in manga.chapters
+            if c.id in expanded_chapters or c.title in expanded_chapters
+        ]
         if not targets:
-            print(f"未找到指定章节: {chapters}, 爬取第1话")
+            print(f"未找到指定章节: {expanded_chapters}, 爬取第1话")
             targets = list(manga.chapters[:1])
-    else:
+    elif is_chapter_url:
         chapter_id = url.rstrip("/").split("/")[-1]
         targets = [c for c in manga.chapters if c.id == chapter_id]
         if not targets:
             targets = list(manga.chapters[:1])
+    else:
+        targets = list(manga.chapters)
 
     print(f"\n将爬取 {len(targets)} 个章节\n")
 
@@ -111,9 +152,10 @@ async def crawl_manga(
 
     for i, chapter in enumerate(targets, 1):
         bar = progress_bar(i, len(targets))
-        print(f"\n[{i}/{len(targets)}] {chapter.title} {bar}")
+        display_name = f"第{i}话"
+        print(f"\n[{i}/{len(targets)}] {display_name} {bar}")
         s, c = await crawl_chapter(
-            crawler, chapter.url, manga.name, chapter.id, i, len(targets)
+            crawler, chapter.url, manga.name, display_name, i, len(targets)
         )
         total_success += s
         total_count += c
@@ -142,6 +184,7 @@ async def main():
     parser.add_argument("-n", "--name", help="漫画保存文件夹名称")
     parser.add_argument("--crawler", default="raw1001", help="爬虫名称")
     parser.add_argument("--list-crawlers", action="store_true", help="列出支持的网站")
+    parser.add_argument("--cover", action="store_true", help="只获取封面，不下载章节")
     parser.add_argument(
         "--delay",
         type=float,
@@ -162,6 +205,8 @@ async def main():
     crawler_cls = CrawlerRegistry.get(args.crawler)
     crawler = crawler_cls(save_dir=args.save_dir)
 
+    cover_only = args.cover if args.chapters is None else False
+
     try:
         name, success, total = await crawl_manga(
             crawler,
@@ -169,6 +214,7 @@ async def main():
             args.name or args.save_dir,
             args.chapters,
             delay=tuple(args.delay),
+            cover_only=cover_only,
         )
     finally:
         await crawler.close()
