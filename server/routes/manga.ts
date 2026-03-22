@@ -1,6 +1,15 @@
 import { corsHeaders, json } from '../lib/cors.ts';
 import { getKv } from '../lib/kv.ts';
 
+/** 阅读顺序：按文件名自然序（p2 在 p10 前） */
+function compareImageFileName(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function sortChapterImages(images: { name: string; url: string }[]): { name: string; url: string }[] {
+  return [...images].sort((x, y) => compareImageFileName(x.name, y.name));
+}
+
 async function getChaptersFromKv(kv: Deno.Kv, mangaName: string): Promise<{ id: string; name: string; images: string[] }[]> {
   const chapters: { id: string; name: string; images: string[] }[] = [];
   
@@ -8,10 +17,12 @@ async function getChaptersFromKv(kv: Deno.Kv, mangaName: string): Promise<{ id: 
   for await (const entry of iter) {
     if (entry.key.length === 4 && entry.key[0] === 'manga' && entry.key[1] === mangaName && entry.key[2] === 'chapters') {
       const chapterData = entry.value as { name: string; images: { name: string; url: string }[] };
+      const names = chapterData.images.map((i) => i.name);
+      names.sort(compareImageFileName);
       chapters.push({
         id: chapterData.name,
         name: chapterData.name,
-        images: chapterData.images.map(i => i.name),
+        images: names,
       });
     }
   }
@@ -74,7 +85,7 @@ export async function handleChapterImages(req: Request, mangaName: string, chapt
     }
     
     const chapterData = chapter.value as { name: string; images: { name: string; url: string }[] };
-    return json(chapterData.images);
+    return json(sortChapterImages(chapterData.images));
   } catch (err) {
     console.error('Chapter images error:', err);
     return json({ error: 'Failed to get chapter images' }, 500);
