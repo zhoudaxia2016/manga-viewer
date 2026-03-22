@@ -60,9 +60,13 @@ Deno.serve({ port: PORT }, async (req) => {
   // 临时路由 - 用完删除
   if (path === "/api/delete-chapter" && req.method === "POST") {
     const kv = await getKv();
-    await kv.delete(["manga", "還暦姫", "chapters", "第一章"]);
+    const iter = kv.list({ prefix: ["manga", "還暦姫"] });
+    const keys: Deno.KvKey[] = [];
+    for await (const entry of iter) {
+      keys.push(entry.key);
+    }
     kv.close();
-    return json({ success: true, deleted: "還暦姫 第一章" });
+    return json({ keys: JSON.stringify(keys) });
   }
 
   return json({ error: 'Not Found' }, 404);
