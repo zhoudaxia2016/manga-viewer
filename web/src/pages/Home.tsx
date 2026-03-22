@@ -93,7 +93,9 @@ export default function Home() {
         const { name, data, path } = files[i];
         const [mangaName, chapterName] = path.split('/');
 
-        setProgress(p => p ? { ...p, currentFile: name } : null);
+        setProgress(p =>
+          p ? { ...p, current: i + 1, currentFile: name } : null,
+        );
 
         const formData = new FormData();
         const blob = new Blob([data as BlobPart]);
@@ -110,8 +112,6 @@ export default function Home() {
           const error = await res.json();
           throw new Error(error.message || `Failed to upload ${name}`);
         }
-
-        setProgress(p => p ? { ...p, current: i + 1 } : null);
       }
 
       showToast('Upload completed successfully!', 'success');
