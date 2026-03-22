@@ -1,49 +1,43 @@
 import { json } from '../lib/cors.ts';
-import Qiniu from 'qiniu';
+import { getKv } from '../lib/kv.ts';
+import { getR2S3Client } from '../lib/r2-s3-client.ts';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 
-const QINIU_ACCESS_KEY = Deno.env.get('QINIU_ACCESS_KEY') || '';
-const QINIU_SECRET_KEY = Deno.env.get('QINIU_SECRET_KEY') || '';
-const QINIU_BUCKET = Deno.env.get('QINIU_BUCKET') || '';
-const QINIU_DOMAIN = Deno.env.get('QINIU_DOMAIN') || '';
-const UPLOAD_HOST = 'https://upload-z2.qiniup.com';
+const R2_ACCOUNT_ID = Deno.env.get('R2_ACCOUNT_ID') || '';
+const R2_ACCESS_KEY_ID = Deno.env.get('R2_ACCESS_KEY_ID') || '';
+const R2_SECRET_ACCESS_KEY = Deno.env.get('R2_SECRET_ACCESS_KEY') || '';
+const R2_BUCKET = Deno.env.get('R2_BUCKET') || '';
+const R2_PUBLIC_BASE = Deno.env.get('R2_PUBLIC_BASE') || '';
 
-async function getDb() {
-  const dbPath = Deno.env.get('DB_PATH');
-  if (dbPath) {
-    return await Deno.openKv(dbPath);
-  }
-  return await Deno.openKv();
+function getR2Endpoint(): string {
+  return `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
 }
 
-function generateUploadToken(key: string): string {
-  const mac = new Qiniu.auth.digest.Mac(QINIU_ACCESS_KEY, QINIU_SECRET_KEY);
-  const options = {
-    scope: QINIU_BUCKET,
-    deadline: Math.floor(Date.now() / 1000) + 3600,
+function getContentType(fileName: string): string {
+  const ext = fileName.toLowerCase().split('.').pop();
+  const types: Record<string, string> = {
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'webp': 'image/webp',
+    'gif': 'image/gif',
   };
-  const putPolicy = new Qiniu.rs.PutPolicy(options);
-  return putPolicy.uploadToken(mac);
+  return types[ext || ''] || 'application/octet-stream';
 }
 
-async function uploadToQiniu(fileData: Uint8Array, key: string): Promise<string> {
-  const token = generateUploadToken(key);
-
-  const formData = new FormData();
-  formData.append('file', new Blob([fileData]), key);
-  formData.append('token', token);
-  formData.append('key', key);
-
-  const res = await fetch(UPLOAD_HOST, {
-    method: 'POST',
-    body: formData,
-  });
-
-  const bodyText = await res.text();
-  if (!res.ok) {
-    throw new Error(`Qiniu upload failed: ${res.status}, body: ${bodyText}`);
-  }
-
-  return `http://${QINIU_DOMAIN}/${key}`;
+async function uploadToR2(fileData: Uint8Array, key: string, fileName: string): Promise<string> {
+  const client = getR2S3Client(
+    getR2Endpoint(),
+    R2_ACCESS_KEY_ID,
+    R2_SECRET_ACCESS_KEY,
+  );
+  await client.send(new PutObjectCommand({
+    Bucket: R2_BUCKET,
+    Key: key,
+    Body: fileData,
+    ContentType: getContentType(fileName),
+  }));
+  return `${R2_PUBLIC_BASE}/${key}`;
 }
 
 export async function handleUpload(req: Request): Promise<Response> {
@@ -51,10 +45,10 @@ export async function handleUpload(req: Request): Promise<Response> {
     return json({ error: 'Method not allowed' }, 405);
   }
 
-  if (!QINIU_ACCESS_KEY || !QINIU_SECRET_KEY || !QINIU_BUCKET) {
+  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET || !R2_PUBLIC_BASE) {
     return json({
-      error: 'Qiniu not configured',
-      message: 'Please set QINIU_ACCESS_KEY, QINIU_SECRET_KEY, QINIU_BUCKET environment variables'
+      error: 'R2 not configured',
+      message: 'Please set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_PUBLIC_BASE environment variables'
     }, 500);
   }
 
@@ -69,9 +63,9 @@ export async function handleUpload(req: Request): Promise<Response> {
       return json({ error: 'Missing mangaName or chapterName' }, 400);
     }
 
-    const key = `${mangaName}/${chapterName}/${file.name}`;
+    const key = `manga/${mangaName}/${chapterName}/${file.name}`;
 
-    const kv = await getDb();
+    const kv = await getKv();
     const chapterKey = ['manga', mangaName, 'chapters', chapterName];
     const chapter = await kv.get(chapterKey);
     
@@ -85,7 +79,7 @@ export async function handleUpload(req: Request): Promise<Response> {
       url = existingImage.url;
     } else {
       const fileData = await file.arrayBuffer();
-      url = await uploadToQiniu(new Uint8Array(fileData), key);
+      url = await uploadToR2(new Uint8Array(fileData), key, file.name);
       images.push({ name: file.name, url });
     }
     
@@ -99,8 +93,6 @@ export async function handleUpload(req: Request): Promise<Response> {
     if (!mangaEntry.value) {
       await kv.set(['manga', mangaName], { name: mangaName, created_at: new Date().toISOString() });
     }
-    await kv.close();
-
     return json({ success: true, url, key, name: file.name, skipped: !!existingImage });
 
   } catch (err) {

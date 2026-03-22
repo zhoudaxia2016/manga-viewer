@@ -1,12 +1,5 @@
 import { corsHeaders, json } from '../lib/cors.ts';
-
-async function getDb() {
-  const dbPath = Deno.env.get('DB_PATH');
-  if (dbPath) {
-    return await Deno.openKv(dbPath);
-  }
-  return await Deno.openKv();
-}
+import { getKv } from '../lib/kv.ts';
 
 async function getChaptersFromKv(kv: Deno.Kv, mangaName: string): Promise<{ id: string; name: string; images: string[] }[]> {
   const chapters: { id: string; name: string; images: string[] }[] = [];
@@ -29,7 +22,7 @@ async function getChaptersFromKv(kv: Deno.Kv, mangaName: string): Promise<{ id: 
 
 export async function handleMangaList(req: Request): Promise<Response> {
   try {
-    const kv = await getDb();
+    const kv = await getKv();
     const mangaList: { name: string; chapterCount: number }[] = [];
     
     const iter = kv.list({ prefix: ['manga'] });
@@ -44,7 +37,6 @@ export async function handleMangaList(req: Request): Promise<Response> {
       }
     }
     
-    await kv.close();
     mangaList.sort((a, b) => a.name.localeCompare(b.name));
     return json(mangaList);
   } catch (err) {
@@ -56,16 +48,14 @@ export async function handleMangaList(req: Request): Promise<Response> {
 export async function handleMangaInfo(req: Request, mangaName: string): Promise<Response> {
   try {
     const decodedName = decodeURIComponent(mangaName);
-    const kv = await getDb();
+    const kv = await getKv();
     
     const manga = await kv.get(['manga', decodedName]);
     if (!manga.value) {
-      await kv.close();
       return json({ error: 'Manga not found' }, 404);
     }
     
     const chapters = await getChaptersFromKv(kv, decodedName);
-    await kv.close();
     return json({ name: decodedName, chapters });
   } catch (err) {
     console.error('Manga info error:', err);
@@ -76,16 +66,14 @@ export async function handleMangaInfo(req: Request, mangaName: string): Promise<
 export async function handleChapterImages(req: Request, mangaName: string, chapterId: string): Promise<Response> {
   try {
     const decodedName = decodeURIComponent(mangaName);
-    const kv = await getDb();
+    const kv = await getKv();
     
     const chapter = await kv.get(['manga', decodedName, 'chapters', decodeURIComponent(chapterId)]);
     if (!chapter.value) {
-      await kv.close();
       return json({ error: 'Chapter not found' }, 404);
     }
     
     const chapterData = chapter.value as { name: string; images: { name: string; url: string }[] };
-    await kv.close();
     return json(chapterData.images);
   } catch (err) {
     console.error('Chapter images error:', err);
@@ -96,11 +84,10 @@ export async function handleChapterImages(req: Request, mangaName: string, chapt
 export async function handleMangaDelete(req: Request, mangaName: string): Promise<Response> {
   try {
     const decodedName = decodeURIComponent(mangaName);
-    const kv = await getDb();
+    const kv = await getKv();
     
     const manga = await kv.get(['manga', decodedName]);
     if (!manga.value) {
-      await kv.close();
       return json({ error: 'Manga not found' }, 404);
     }
     
@@ -115,11 +102,9 @@ export async function handleMangaDelete(req: Request, mangaName: string): Promis
       for (const key of toDelete) {
         await kv.delete(key);
       }
-      await kv.close();
       return json({ success: true });
     }
     
-    await kv.close();
     return json({ error: 'Method not allowed' }, 405);
   } catch (err) {
     console.error('Delete manga error:', err);
@@ -130,11 +115,10 @@ export async function handleMangaDelete(req: Request, mangaName: string): Promis
 export async function handleImage(req: Request, mangaName: string, chapterId: string, imagePath: string): Promise<Response> {
   try {
     const decodedName = decodeURIComponent(mangaName);
-    const kv = await getDb();
+    const kv = await getKv();
     
     const chapter = await kv.get(['manga', decodedName, 'chapters', decodeURIComponent(chapterId)]);
     if (!chapter.value) {
-      await kv.close();
       return json({ error: 'Chapter not found' }, 404);
     }
     
@@ -143,11 +127,9 @@ export async function handleImage(req: Request, mangaName: string, chapterId: st
     const imageData = chapterData.images.find(i => i.name === imageName);
     
     if (!imageData) {
-      await kv.close();
       return json({ error: 'Image not found' }, 404);
     }
     
-    await kv.close();
     return json({ url: imageData.url });
   } catch (err) {
     console.error('Image error:', err);
