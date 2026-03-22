@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { API_BASE } from '@/config';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -30,9 +30,11 @@ export default function Reader() {
   const [currentPage, setCurrentPage] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const scrollRef = useRef<HTMLDivElement>(null);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
+  const mangaName = searchParams.get('name');
   const currentChapterIndex = manga?.chapters.findIndex(c => c.id === currentChapter?.id) ?? -1;
   const hasPrevChapter = currentChapterIndex > 0;
   const hasNextChapter = currentChapterIndex < (manga?.chapters.length ?? 0) - 1;
@@ -45,7 +47,6 @@ export default function Reader() {
   }, []);
 
   useEffect(() => {
-    const mangaName = sessionStorage.getItem('mangaName');
     if (!mangaName) {
       navigate('/');
       return;
@@ -68,13 +69,10 @@ export default function Reader() {
         console.error('Failed to fetch manga:', err);
         navigate('/');
       });
-  }, [navigate]);
+  }, [mangaName, navigate]);
 
   useEffect(() => {
-    if (!currentChapter) return;
-
-    const mangaName = sessionStorage.getItem('mangaName');
-    if (!mangaName) return;
+    if (!currentChapter || !mangaName) return;
 
     setIsLoading(true);
     fetch(`${API_BASE}/api/manga/${encodeURIComponent(mangaName)}/${encodeURIComponent(currentChapter.id)}/images`)
@@ -86,7 +84,7 @@ export default function Reader() {
       })
       .catch(err => console.error('Failed to fetch images:', err))
       .finally(() => setIsLoading(false));
-  }, [currentChapter]);
+  }, [currentChapter, mangaName]);
 
   useEffect(() => {
     resetScroll();

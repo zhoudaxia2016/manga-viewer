@@ -295,8 +295,7 @@ export default function Home() {
   }, [showToast]);
 
   const handleMangaClick = useCallback((manga: Manga) => {
-    sessionStorage.setItem('mangaName', manga.name);
-    navigate('/reader');
+    navigate(`/reader?name=${encodeURIComponent(manga.name)}`);
   }, [navigate]);
 
   return (
