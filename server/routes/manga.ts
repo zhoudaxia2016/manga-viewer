@@ -31,19 +31,59 @@ async function getChaptersFromKv(kv: Deno.Kv, mangaName: string): Promise<{ id: 
   return chapters;
 }
 
+function isCoverJpgFileName(name: string): boolean {
+  return name.toLowerCase() === 'cover.jpg';
+}
+
+/**
+ * 列表封面：
+ * 1) `漫画名/cover.jpg`（与章节文件夹同级）→ KV `['manga', name, 'cover']`
+ * 2) 否则任意章节内 `cover.jpg`（不区分大小写）
+ * 3) 否则「第一话」按文件名排序后的首张图
+ */
+async function getCoverUrlForManga(
+  kv: Deno.Kv,
+  mangaName: string,
+  chapters?: { id: string; name: string; images: string[] }[],
+): Promise<string | null> {
+  const rootCover = await kv.get(['manga', mangaName, 'cover']);
+  if (rootCover.value) {
+    const u = (rootCover.value as { url?: string }).url;
+    if (u) return u;
+  }
+
+  const list = chapters ?? await getChaptersFromKv(kv, mangaName);
+  let firstChapterFirstUrl: string | null = null;
+
+  for (const ch of list) {
+    const chapter = await kv.get(['manga', mangaName, 'chapters', ch.id]);
+    if (!chapter.value) continue;
+    const chapterData = chapter.value as { name: string; images: { name: string; url: string }[] };
+    const sorted = sortChapterImages(chapterData.images);
+    const cover = sorted.find((i) => isCoverJpgFileName(i.name));
+    if (cover) return cover.url;
+    if (firstChapterFirstUrl === null && sorted.length > 0) {
+      firstChapterFirstUrl = sorted[0].url;
+    }
+  }
+  return firstChapterFirstUrl;
+}
+
 export async function handleMangaList(req: Request): Promise<Response> {
   try {
     const kv = await getKv();
-    const mangaList: { name: string; chapterCount: number }[] = [];
+    const mangaList: { name: string; chapterCount: number; coverUrl: string | null }[] = [];
     
     const iter = kv.list({ prefix: ['manga'] });
     for await (const entry of iter) {
       if (entry.key.length === 2 && entry.key[0] === 'manga') {
         const mangaData = entry.value as { name: string };
         const chapters = await getChaptersFromKv(kv, mangaData.name);
+        const coverUrl = await getCoverUrlForManga(kv, mangaData.name, chapters);
         mangaList.push({
           name: mangaData.name,
           chapterCount: chapters.length,
+          coverUrl,
         });
       }
     }

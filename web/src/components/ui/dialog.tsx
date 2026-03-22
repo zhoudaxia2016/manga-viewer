@@ -13,7 +13,7 @@ const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
       <div
         ref={ref}
         className={cn(
-          "fixed inset-0 z-50 flex items-center justify-center bg-black/80",
+          "fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 backdrop-blur-sm",
           className
         )}
         onClick={() => onOpenChange?.(false)}
@@ -35,7 +35,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
     <div
       ref={ref}
       className={cn(
-        "relative w-full max-w-lg rounded-lg bg-background p-6 shadow-lg",
+        "relative w-full max-w-lg rounded-xl border border-zinc-200 bg-white p-6 text-zinc-900 shadow-xl",
         className
       )}
       onClick={e => e.stopPropagation()}
@@ -73,7 +73,7 @@ const DialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <h2
     ref={ref}
-    className={cn("text-lg font-semibold leading-none tracking-tight", className)}
+    className={cn("text-lg font-semibold leading-none tracking-tight text-zinc-900", className)}
     {...props}
   />
 ))
@@ -85,7 +85,7 @@ const DialogDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <p
     ref={ref}
-    className={cn("text-sm text-muted-foreground", className)}
+    className={cn("text-sm text-zinc-500", className)}
     {...props}
   />
 ))

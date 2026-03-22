@@ -58,15 +58,48 @@ export async function handleUpload(req: Request): Promise<Response> {
     const file = formData.get('file') as File | null;
     const mangaName = formData.get('mangaName') as string | null;
     const chapterName = formData.get('chapterName') as string | null;
+    const mangaRootCover = formData.get('mangaRootCover') === '1';
 
     if (!file) return json({ error: 'No file provided' }, 400);
-    if (!mangaName || !chapterName) {
-      return json({ error: 'Missing mangaName or chapterName' }, 400);
+    if (!mangaName) {
+      return json({ error: 'Missing mangaName' }, 400);
+    }
+
+    const kv = await getKv();
+
+    /** 漫画根目录 `漫画名/cover.jpg`（与章节文件夹同级），单独存 KV，不进章节列表 */
+    if (mangaRootCover) {
+      const coverFileName = 'cover.jpg';
+      const key = `manga/${mangaName}/${coverFileName}`;
+
+      const fileData = new Uint8Array(await file.arrayBuffer());
+      const hash = await md5(fileData);
+
+      let url: string;
+      const md5Entry = await kv.get(['md5', hash]);
+
+      if (md5Entry.value) {
+        url = `${R2_PUBLIC_BASE}/${(md5Entry.value as { url: string; key: string }).key}`;
+      } else {
+        url = await uploadToR2(fileData, key, coverFileName);
+        await kv.set(['md5', hash], { url, key });
+      }
+
+      await kv.set(['manga', mangaName, 'cover'], { url });
+
+      const mangaEntry = await kv.get(['manga', mangaName]);
+      if (!mangaEntry.value) {
+        await kv.set(['manga', mangaName], { name: mangaName, created_at: new Date().toISOString() });
+      }
+      return json({ success: true, url, key, name: coverFileName, skipped: false, mangaRootCover: true });
+    }
+
+    if (!chapterName) {
+      return json({ error: 'Missing chapterName' }, 400);
     }
 
     const key = `manga/${mangaName}/${chapterName}/${file.name}`;
 
-    const kv = await getKv();
     const chapterKey = ['manga', mangaName, 'chapters', chapterName];
     const chapter = await kv.get(chapterKey);
 
