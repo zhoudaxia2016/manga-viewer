@@ -125,7 +125,7 @@ export default function Home() {
 
   const handleFileUpload = useCallback(async (file: File) => {
     if (!file.name.endsWith('.zip')) {
-      showToast('Please select a ZIP file', 'error');
+      showToast('请选择 ZIP 文件', 'error');
       return;
     }
 
@@ -237,7 +237,7 @@ export default function Home() {
       fetchMangaList();
 
       if (failed.length === 0) {
-        showToast('Upload completed successfully!', 'success');
+        showToast('上传成功', 'success');
       } else {
         setUploadReport({ okCount, total: files.length, failed });
         showToast(
@@ -247,7 +247,7 @@ export default function Home() {
       }
     } catch (err) {
       console.error('Upload error:', err);
-      showToast(err instanceof Error ? err.message : 'Upload failed', 'error');
+      showToast(err instanceof Error ? err.message : '上传失败', 'error');
     } finally {
       setUploading(false);
       setProgress(null);
@@ -283,9 +283,9 @@ export default function Home() {
       const res = await fetch(`${API_BASE}/api/manga/${encodeURIComponent(mangaName)}`, { method: 'DELETE' });
       if (res.ok) {
         setMangaList(prev => prev.filter(m => m.name !== mangaName));
-        showToast('Deleted successfully', 'success');
+        showToast('删除成功', 'success');
       } else {
-        showToast('Failed to delete', 'error');
+        showToast('删除失败', 'error');
       }
     } catch (err) {
       console.error('Failed to delete manga:', err);
@@ -335,9 +335,9 @@ export default function Home() {
       <Dialog open={!!confirmDelete} onOpenChange={() => setConfirmDelete(null)}>
         <DialogContent className="gap-0 sm:max-w-md">
           <DialogHeader className="space-y-1.5 pb-4">
-            <DialogTitle>Delete Manga</DialogTitle>
+            <DialogTitle>删除漫画</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{confirmDelete}"? This action cannot be undone.
+              确定要删除 "{confirmDelete}" 吗？此操作不可撤销。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 border-t border-zinc-100 pt-4 sm:justify-end">
@@ -362,13 +362,13 @@ export default function Home() {
       </Dialog>
 
       <div className="mx-auto mb-8 flex max-w-[1400px] items-center justify-between px-4 pt-6 sm:px-6 sm:pt-8">
-        <h1 className="text-2xl font-bold text-zinc-900">Manga Viewer</h1>
+        <h1 className="text-2xl font-bold text-zinc-900">漫画阅读器</h1>
         <Button
           type="button"
           className="rounded-lg border-0 bg-zinc-900 px-5 font-medium text-white shadow-sm hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2"
           onClick={() => setShowUpload(true)}
         >
-          + Upload
+          + 上传
         </Button>
       </div>
 
