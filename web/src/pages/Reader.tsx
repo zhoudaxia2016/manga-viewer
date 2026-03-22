@@ -63,7 +63,7 @@ export default function Reader() {
   }, [currentChapter]);
 
   if (!manga || !currentChapter) {
-    return <div className="reader">Loading...</div>;
+    return <div className="reader">加载中...</div>;
   }
 
   return (
@@ -72,7 +72,7 @@ export default function Reader() {
       onClick={() => setShowControls(!showControls)}
     >
       <div className={`header ${showControls ? 'visible' : 'hidden'}`}>
-        <button onClick={() => navigate('/')}>← Back</button>
+        <button onClick={() => navigate('/')}>← 返回</button>
         <span className="title">{manga.name}</span>
         <select 
           value={currentChapter.id}
@@ -91,7 +91,7 @@ export default function Reader() {
 
       <div className="scroll-view">
         {images.map((img, idx) => (
-          <img key={idx} src={img} alt={`Page ${idx + 1}`} loading="lazy" />
+          <img key={idx} src={img} alt={`第 ${idx + 1} 页`} loading="lazy" />
         ))}
       </div>
 
