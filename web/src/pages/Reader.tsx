@@ -91,7 +91,7 @@ export default function Reader() {
 
       <div className="scroll-view">
         {images.map((img, idx) => (
-          <img key={idx} src={img} alt={`Page ${idx + 1}`} />
+          <img key={idx} src={img} alt={`Page ${idx + 1}`} loading="lazy" />
         ))}
       </div>
 
