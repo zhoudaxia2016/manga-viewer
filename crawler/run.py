@@ -34,7 +34,7 @@ async def crawl_chapter(
 
     if not images:
         print("  无图片")
-        return 0, 0
+        return 0, 0, []
 
     save_path = crawler.chapter_to_folder(save_dir, chapter_id)
     print(f"  下载到: {save_path}")
@@ -42,6 +42,7 @@ async def crawl_chapter(
     total = len(images)
     completed = 0
     success = 0
+    failed_urls = []
 
     async def download_with_progress(i: int, url: str) -> DownloadResult:
         nonlocal completed, success
@@ -52,6 +53,8 @@ async def crawl_chapter(
         completed += 1
         if result.success:
             success += 1
+        else:
+            failed_urls.append(url)
         bar = progress_bar(completed, total)
         status = "✓" if result.success else "✗"
         if result.retries > 0:
@@ -67,7 +70,7 @@ async def crawl_chapter(
     if failed > 0:
         print(f"  失败: {failed}张")
 
-    return success, total
+    return success, total, failed_urls
 
 
 def extract_manga_homepage(url: str) -> str:
@@ -114,6 +117,20 @@ async def crawl_manga(
             print("无封面信息")
         return manga.name, 0, 0
 
+    import os
+
+    safe_name = "".join(c for c in manga.name if c not in r'\/:*?"<>|')
+    cover_path = os.path.join(save_dir, safe_name, "cover.jpg")
+    os.makedirs(os.path.dirname(cover_path), exist_ok=True)
+    if manga.cover_url:
+        downloaded = await crawler.download_image(manga.cover_url, cover_path)
+        if downloaded:
+            print(f"封面已保存: {cover_path}")
+        else:
+            print(f"封面下载失败")
+    else:
+        print("无封面信息")
+
     is_chapter_url = bool(re.search(r"/di\d+hua?|/chapter-\d+", url))
 
     if chapters:
@@ -149,16 +166,18 @@ async def crawl_manga(
 
     total_success = 0
     total_count = 0
+    all_failed_urls = []
 
     for i, chapter in enumerate(targets, 1):
         bar = progress_bar(i, len(targets))
         display_name = f"第{i}话"
         print(f"\n[{i}/{len(targets)}] {display_name} {bar}")
-        s, c = await crawl_chapter(
+        s, c, failed = await crawl_chapter(
             crawler, chapter.url, manga.name, display_name, i, len(targets)
         )
         total_success += s
         total_count += c
+        all_failed_urls.extend(failed)
 
         total_bar = progress_bar(total_success, total_count)
         print(f"  总进度: {total_bar}")
@@ -173,6 +192,10 @@ async def crawl_manga(
     print(f"总计: {total_success}/{total_count} 张图片")
     if total_count > 0 and total_success < total_count:
         print(f"失败: {total_count - total_success}张")
+    if all_failed_urls:
+        print(f"\n失败URL列表:")
+        for url in all_failed_urls:
+            print(f"  {url}")
     return manga.name, total_success, total_count
 
 
