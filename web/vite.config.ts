@@ -18,16 +18,25 @@ export default defineConfig(({ mode }) => ({
         theme_color: '#1e293b',
         background_color: '#0f172a',
         display: 'standalone',
+        display_override: ['standalone', 'minimal-ui'],
+        start_url: '/manga-viewer/',
+        scope: '/manga-viewer/',
         icons: [
           {
-            src: '/pwa-192x192.png',
+            src: '/manga-viewer/pwa-192x192.png',
             sizes: '192x192',
             type: 'image/png',
           },
           {
-            src: '/pwa-512x512.png',
+            src: '/manga-viewer/pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
+          },
+          {
+            src: '/manga-viewer/pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
           },
         ],
       },
