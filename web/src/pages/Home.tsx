@@ -40,7 +40,17 @@ async function postUploadWithRetry(url: string, formData: FormData): Promise<Res
   const maxAttempts = 6;
   let backoffMs = 1000;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const res = await fetch(url, { method: 'POST', body: formData });
+    let res: Response;
+    try {
+      res = await fetch(url, { method: 'POST', body: formData });
+    } catch (e) {
+      if (attempt === maxAttempts - 1) {
+        throw e instanceof Error ? e : new Error(String(e));
+      }
+      await sleep(backoffMs);
+      backoffMs = Math.min(backoffMs * 2, 32_000);
+      continue;
+    }
     if (res.ok) return res;
     if (!isUploadRetryable(res.status)) return res;
     if (attempt === maxAttempts - 1) return res;
@@ -53,6 +63,18 @@ async function postUploadWithRetry(url: string, formData: FormData): Promise<Res
   throw new Error('upload retry exhausted');
 }
 
+async function parseUploadErrorResponse(res: Response): Promise<string> {
+  const text = await res.text();
+  try {
+    const j = JSON.parse(text) as { message?: string; error?: string };
+    if (j.message) return j.message;
+    if (j.error) return String(j.error);
+  } catch {
+    /* ignore */
+  }
+  return text.trim() || `HTTP ${res.status}`;
+}
+
 export default function Home() {
   const [mangaList, setMangaList] = useState<Manga[]>([]);
   const [showUpload, setShowUpload] = useState(false);
@@ -60,6 +82,11 @@ export default function Home() {
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [uploadReport, setUploadReport] = useState<{
+    okCount: number;
+    total: number;
+    failed: { path: string; error: string }[];
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -116,15 +143,24 @@ export default function Home() {
         files.push({ name: fileName, data, path: `${mangaName}/${chapterName}` });
       }
 
+      files.sort((a, b) => {
+        const ka = `${a.path}/${a.name}`;
+        const kb = `${b.path}/${b.name}`;
+        return ka.localeCompare(kb, undefined, { numeric: true, sensitivity: 'base' });
+      });
+
       if (files.length === 0) {
         throw new Error('No valid images found in ZIP');
       }
 
       setProgress({ current: 0, total: files.length, currentFile: '' });
 
+      const failed: { path: string; error: string }[] = [];
+
       for (let i = 0; i < files.length; i++) {
         const { name, data, path } = files[i];
         const [mangaName, chapterName] = path.split('/');
+        const zipPath = `${mangaName}/${chapterName}/${name}`;
 
         setProgress(p =>
           p ? { ...p, current: i + 1, currentFile: name } : null,
@@ -138,19 +174,20 @@ export default function Home() {
         formData.append('chapterName', chapterName);
         formData.append('md5Hash', md5Hash);
 
-        const res = await postUploadWithRetry(`${API_BASE}/api/upload`, formData);
-
-        if (!res.ok) {
-          let msg = `Failed to upload ${name}`;
-          try {
-            const error = await res.json();
-            if (error.message) msg = error.message;
-          } catch {
-            if (isUploadRetryable(res.status)) {
-              msg = '服务繁忙或限流，请稍后重试';
-            }
+        try {
+          const res = await postUploadWithRetry(`${API_BASE}/api/upload`, formData);
+          if (!res.ok) {
+            const msg = await parseUploadErrorResponse(res);
+            failed.push({
+              path: zipPath,
+              error: isUploadRetryable(res.status) ? `${msg} (可稍后仅重传 ZIP 中对应文件)` : msg,
+            });
           }
-          throw new Error(msg);
+        } catch (e) {
+          failed.push({
+            path: zipPath,
+            error: e instanceof Error ? e.message : String(e),
+          });
         }
 
         if (i < files.length - 1) {
@@ -158,9 +195,19 @@ export default function Home() {
         }
       }
 
-      showToast('Upload completed successfully!', 'success');
+      const okCount = files.length - failed.length;
       setShowUpload(false);
       fetchMangaList();
+
+      if (failed.length === 0) {
+        showToast('Upload completed successfully!', 'success');
+      } else {
+        setUploadReport({ okCount, total: files.length, failed });
+        showToast(
+          `上传结束：成功 ${okCount}/${files.length}，失败 ${failed.length} 张（见详情）`,
+          'error',
+        );
+      }
     } catch (err) {
       console.error('Upload error:', err);
       showToast(err instanceof Error ? err.message : 'Upload failed', 'error');
@@ -224,6 +271,29 @@ export default function Home() {
           </Toast>
         )}
       </ToastContainer>
+
+      <Dialog open={!!uploadReport} onOpenChange={() => setUploadReport(null)}>
+        <DialogContent className="max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>部分图片未上传成功</DialogTitle>
+            <DialogDescription>
+              成功 {uploadReport?.okCount ?? 0} / {uploadReport?.total ?? 0}
+              。下列路径可对照 ZIP 内结构重传或稍后重试。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="overflow-y-auto text-sm font-mono space-y-2 pr-2 max-h-[50vh]">
+            {uploadReport?.failed.map((f) => (
+              <div key={f.path} className="border-b border-border pb-2 last:border-0">
+                <div className="text-foreground break-all">{f.path}</div>
+                <div className="text-muted-foreground text-xs mt-1">{f.error}</div>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setUploadReport(null)}>关闭</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!confirmDelete} onOpenChange={() => setConfirmDelete(null)}>
         <DialogContent>
