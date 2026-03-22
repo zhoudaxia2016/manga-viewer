@@ -1,5 +1,5 @@
 import { FetchHttpHandler } from 'npm:@smithy/fetch-http-handler';
-import { S3Client } from '@aws-sdk/client-s3';
+import { S3Client, HeadObjectCommand } from '@aws-sdk/client-s3';
 
 let r2Http: Deno.HttpClient | null = null;
 function getR2Http(): Deno.HttpClient {
@@ -31,4 +31,23 @@ export function getR2S3Client(
     });
   }
   return client;
+}
+
+export async function checkR2Exists(
+  endpoint: string,
+  accessKeyId: string,
+  secretAccessKey: string,
+  bucket: string,
+  key: string,
+): Promise<boolean> {
+  const client = getR2S3Client(endpoint, accessKeyId, secretAccessKey);
+  try {
+    await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    return true;
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'NotFound') {
+      return false;
+    }
+    throw err;
+  }
 }

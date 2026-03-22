@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-
-const API_BASE = import.meta.env.VITE_API_URL || '';
+import { API_BASE } from '@/config';
 
 interface Chapter {
   id: string;
