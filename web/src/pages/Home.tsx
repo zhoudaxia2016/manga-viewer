@@ -1,12 +1,12 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import JSZip from 'jszip';
+import SparkMD5 from 'spark-md5';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Toast, ToastContainer } from '@/components/ui/toast';
-
-const API_BASE = import.meta.env.VITE_API_URL || '';
+import { API_BASE, isProdApiUrlMissing, PROD_API_URL_HINT } from '@/config';
 
 interface Manga {
   name: string;
@@ -48,8 +48,12 @@ export default function Home() {
       }
     } catch (err) {
       console.error('Failed to fetch manga list:', err);
+      showToast(
+        isProdApiUrlMissing() ? PROD_API_URL_HINT : '无法连接 API（检查地址、HTTPS 与 CORS）',
+        'error',
+      );
     }
-  }, []);
+  }, [showToast]);
 
   const handleFileUpload = useCallback(async (file: File) => {
     if (!file.name.endsWith('.zip')) {
@@ -99,9 +103,11 @@ export default function Home() {
 
         const formData = new FormData();
         const blob = new Blob([data as BlobPart]);
+        const md5Hash = SparkMD5.ArrayBuffer.hash(data as ArrayBuffer);
         formData.append('file', blob, name);
         formData.append('mangaName', mangaName);
         formData.append('chapterName', chapterName);
+        formData.append('md5Hash', md5Hash);
 
         const res = await fetch(`${API_BASE}/api/upload`, {
           method: 'POST',

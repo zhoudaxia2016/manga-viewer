@@ -1,5 +1,6 @@
 import { json } from '../lib/cors.ts';
 import { getKv } from '../lib/kv.ts';
+import { md5 } from '../lib/md5.ts';
 import { getR2S3Client } from '../lib/r2-s3-client.ts';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 
@@ -68,32 +69,41 @@ export async function handleUpload(req: Request): Promise<Response> {
     const kv = await getKv();
     const chapterKey = ['manga', mangaName, 'chapters', chapterName];
     const chapter = await kv.get(chapterKey);
-    
+
     let chapterData = chapter.value as { name: string; images: { name: string; url: string }[]; created_at: string } | null;
     let images = chapterData?.images || [];
-    
+
+    // Case 1: DB already has this image in this chapter → early return
     const existingImage = images.find(img => img.name === file.name);
-    let url: string;
-    
     if (existingImage) {
-      url = existingImage.url;
-    } else {
-      const fileData = await file.arrayBuffer();
-      url = await uploadToR2(new Uint8Array(fileData), key, file.name);
-      images.push({ name: file.name, url });
+      return json({ success: true, url: existingImage.url, key, name: file.name, skipped: true });
     }
-    
+
+    const fileData = new Uint8Array(await file.arrayBuffer());
+    const hash = await md5(fileData);
+
+    let url: string;
+    const md5Entry = await kv.get(['md5', hash]);
+
+    if (md5Entry.value) {
+      url = `${R2_PUBLIC_BASE}/${(md5Entry.value as { url: string; key: string }).key}`;
+    } else {
+      url = await uploadToR2(fileData, key, file.name);
+      await kv.set(['md5', hash], { url, key });
+    }
+
+    images.push({ name: file.name, url });
     await kv.set(chapterKey, {
       name: chapterName,
       images,
-      created_at: new Date().toISOString()
+      created_at: chapterData?.created_at || new Date().toISOString(),
     });
 
     const mangaEntry = await kv.get(['manga', mangaName]);
     if (!mangaEntry.value) {
       await kv.set(['manga', mangaName], { name: mangaName, created_at: new Date().toISOString() });
     }
-    return json({ success: true, url, key, name: file.name, skipped: !!existingImage });
+    return json({ success: true, url, key, name: file.name, skipped: false });
 
   } catch (err) {
     console.error('Upload error:', err);
