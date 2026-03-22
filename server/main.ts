@@ -2,7 +2,6 @@ import "dotenv/load.ts";
 import { corsHeaders, json } from './lib/cors.ts';
 import { handleMangaList, handleMangaInfo, handleChapterImages, handleImage, handleMangaDelete } from './routes/manga.ts';
 import { handleUpload } from './routes/upload.ts';
-import { getKv } from './lib/kv.ts';
 
 const ROUTES: Record<string, { method: string; handler: (req: Request) => Promise<Response> }> = {
   '/api/manga': { method: 'GET', handler: handleMangaList },
@@ -55,18 +54,6 @@ Deno.serve({ port: PORT }, async (req) => {
         return handleMangaInfo(req, mangaName);
       }
     }
-  }
-
-  // 临时路由 - 用完删除
-  if (path === "/api/delete-chapter" && req.method === "POST") {
-    const kv = await getKv();
-    const iter = kv.list({ prefix: ["manga", "還暦姫"] });
-    const keys: Deno.KvKey[] = [];
-    for await (const entry of iter) {
-      keys.push(entry.key);
-    }
-    kv.close();
-    return json({ keys });
   }
 
   return json({ error: 'Not Found' }, 404);
