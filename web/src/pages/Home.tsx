@@ -24,6 +24,35 @@ interface Toast {
   type: 'success' | 'error';
 }
 
+/** 相邻两次上传之间的间隔，减轻 R2 / Deploy / 边缘网关突发限流（可按网络调大） */
+const UPLOAD_GAP_MS = Number(import.meta.env.VITE_UPLOAD_GAP_MS) || 400;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** 可重试的状态：限流、网关超时、上游暂时不可用 */
+function isUploadRetryable(status: number): boolean {
+  return status === 429 || status === 502 || status === 503 || status === 504;
+}
+
+async function postUploadWithRetry(url: string, formData: FormData): Promise<Response> {
+  const maxAttempts = 6;
+  let backoffMs = 1000;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const res = await fetch(url, { method: 'POST', body: formData });
+    if (res.ok) return res;
+    if (!isUploadRetryable(res.status)) return res;
+    if (attempt === maxAttempts - 1) return res;
+    const ra = res.headers.get('Retry-After');
+    const sec = ra ? parseInt(ra, 10) : NaN;
+    const wait = Number.isFinite(sec) && sec >= 0 ? sec * 1000 : backoffMs;
+    await sleep(wait);
+    backoffMs = Math.min(backoffMs * 2, 32_000);
+  }
+  throw new Error('upload retry exhausted');
+}
+
 export default function Home() {
   const [mangaList, setMangaList] = useState<Manga[]>([]);
   const [showUpload, setShowUpload] = useState(false);
@@ -109,14 +138,23 @@ export default function Home() {
         formData.append('chapterName', chapterName);
         formData.append('md5Hash', md5Hash);
 
-        const res = await fetch(`${API_BASE}/api/upload`, {
-          method: 'POST',
-          body: formData,
-        });
+        const res = await postUploadWithRetry(`${API_BASE}/api/upload`, formData);
 
         if (!res.ok) {
-          const error = await res.json();
-          throw new Error(error.message || `Failed to upload ${name}`);
+          let msg = `Failed to upload ${name}`;
+          try {
+            const error = await res.json();
+            if (error.message) msg = error.message;
+          } catch {
+            if (isUploadRetryable(res.status)) {
+              msg = '服务繁忙或限流，请稍后重试';
+            }
+          }
+          throw new Error(msg);
+        }
+
+        if (i < files.length - 1) {
+          await sleep(UPLOAD_GAP_MS);
         }
       }
 
