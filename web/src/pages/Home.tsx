@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import JSZip from 'jszip';
-import SparkMD5 from 'spark-md5';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -11,6 +10,7 @@ import { API_BASE, isProdApiUrlMissing, PROD_API_URL_HINT } from '@/config';
 interface Manga {
   name: string;
   chapterCount: number;
+  coverUrl: string | null;
 }
 
 interface UploadProgress {
@@ -75,6 +75,18 @@ async function parseUploadErrorResponse(res: Response): Promise<string> {
   return text.trim() || `HTTP ${res.status}`;
 }
 
+/** ZIP 内：`漫画名/cover.jpg`（与章节文件夹同级）或 `漫画名/章节名/图` */
+type ZipUploadItem =
+  | { kind: 'mangaRootCover'; mangaName: string; name: string; data: BlobPart; zipPath: string }
+  | {
+      kind: 'chapter';
+      mangaName: string;
+      chapterName: string;
+      name: string;
+      data: BlobPart;
+      zipPath: string;
+    };
+
 export default function Home() {
   const [mangaList, setMangaList] = useState<Manga[]>([]);
   const [showUpload, setShowUpload] = useState(false);
@@ -124,12 +136,29 @@ export default function Home() {
       const zipData = await file.arrayBuffer();
       const zip = await JSZip.loadAsync(zipData);
 
-      const files: { name: string; data: BlobPart; path: string }[] = [];
+      const rootCoverItems: ZipUploadItem[] = [];
+      const chapterItems: ZipUploadItem[] = [];
       const zipFiles = zip.files;
 
       for (const [path, entry] of Object.entries(zipFiles)) {
         if (entry.dir) continue;
-        const parts = path.split('/').filter(Boolean);
+        const normPath = path.replace(/\\/g, '/');
+        const parts = normPath.split('/').filter(Boolean);
+
+        if (parts.length === 2) {
+          const [mangaName, fileName] = parts;
+          if (fileName.toLowerCase() !== 'cover.jpg') continue;
+          const data = new Uint8Array(await entry.async('arraybuffer')) as unknown as BlobPart;
+          rootCoverItems.push({
+            kind: 'mangaRootCover',
+            mangaName,
+            name: 'cover.jpg',
+            data,
+            zipPath: `${mangaName}/cover.jpg`,
+          });
+          continue;
+        }
+
         if (parts.length < 3) continue;
 
         const [mangaName, chapterName, ...fileNameParts] = parts;
@@ -140,14 +169,21 @@ export default function Home() {
             !ext.endsWith('.gif')) continue;
 
         const data = new Uint8Array(await entry.async('arraybuffer')) as unknown as BlobPart;
-        files.push({ name: fileName, data, path: `${mangaName}/${chapterName}` });
+        chapterItems.push({
+          kind: 'chapter',
+          mangaName,
+          chapterName,
+          name: fileName,
+          data,
+          zipPath: `${mangaName}/${chapterName}/${fileName}`,
+        });
       }
 
-      files.sort((a, b) => {
-        const ka = `${a.path}/${a.name}`;
-        const kb = `${b.path}/${b.name}`;
-        return ka.localeCompare(kb, undefined, { numeric: true, sensitivity: 'base' });
-      });
+      chapterItems.sort((a, b) =>
+        a.zipPath.localeCompare(b.zipPath, undefined, { numeric: true, sensitivity: 'base' }),
+      );
+
+      const files: ZipUploadItem[] = [...rootCoverItems, ...chapterItems];
 
       if (files.length === 0) {
         throw new Error('No valid images found in ZIP');
@@ -158,21 +194,22 @@ export default function Home() {
       const failed: { path: string; error: string }[] = [];
 
       for (let i = 0; i < files.length; i++) {
-        const { name, data, path } = files[i];
-        const [mangaName, chapterName] = path.split('/');
-        const zipPath = `${mangaName}/${chapterName}/${name}`;
+        const item = files[i];
+        const zipPath = item.zipPath;
 
         setProgress(p =>
-          p ? { ...p, current: i + 1, currentFile: name } : null,
+          p ? { ...p, current: i + 1, currentFile: item.name } : null,
         );
 
         const formData = new FormData();
-        const blob = new Blob([data as BlobPart]);
-        const md5Hash = SparkMD5.ArrayBuffer.hash(data as ArrayBuffer);
-        formData.append('file', blob, name);
-        formData.append('mangaName', mangaName);
-        formData.append('chapterName', chapterName);
-        formData.append('md5Hash', md5Hash);
+        const blob = new Blob([item.data as BlobPart]);
+        formData.append('file', blob, item.name);
+        formData.append('mangaName', item.mangaName);
+        if (item.kind === 'mangaRootCover') {
+          formData.append('mangaRootCover', '1');
+        } else {
+          formData.append('chapterName', item.chapterName);
+        }
 
         try {
           const res = await postUploadWithRetry(`${API_BASE}/api/upload`, formData);
@@ -263,7 +300,7 @@ export default function Home() {
   }, [navigate]);
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-8">
+    <div className="min-h-screen bg-white text-zinc-900">
       <ToastContainer>
         {toast && (
           <Toast variant={toast.type === 'error' ? 'destructive' : 'default'}>
@@ -283,9 +320,9 @@ export default function Home() {
           </DialogHeader>
           <div className="overflow-y-auto text-sm font-mono space-y-2 pr-2 max-h-[50vh]">
             {uploadReport?.failed.map((f) => (
-              <div key={f.path} className="border-b border-border pb-2 last:border-0">
-                <div className="text-foreground break-all">{f.path}</div>
-                <div className="text-muted-foreground text-xs mt-1">{f.error}</div>
+              <div key={f.path} className="border-b border-zinc-200 pb-2 last:border-0">
+                <div className="break-all text-zinc-900">{f.path}</div>
+                <div className="mt-1 text-xs text-zinc-500">{f.error}</div>
               </div>
             ))}
           </div>
@@ -296,49 +333,73 @@ export default function Home() {
       </Dialog>
 
       <Dialog open={!!confirmDelete} onOpenChange={() => setConfirmDelete(null)}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="gap-0 sm:max-w-md">
+          <DialogHeader className="space-y-1.5 pb-4">
             <DialogTitle>Delete Manga</DialogTitle>
             <DialogDescription>
               Are you sure you want to delete "{confirmDelete}"? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDelete(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={() => handleDelete(confirmDelete!)}>Delete</Button>
+          <DialogFooter className="gap-2 border-t border-zinc-100 pt-4 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 rounded-lg border-zinc-200 bg-white text-zinc-700 shadow-none hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-zinc-400"
+              onClick={() => setConfirmDelete(null)}
+            >
+              取消
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              className="h-9 rounded-lg border-0 bg-red-600 text-white shadow-sm hover:bg-red-700 focus-visible:ring-red-500"
+              onClick={() => handleDelete(confirmDelete!)}
+            >
+              删除
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-bold">Manga Viewer</h1>
-        <Button onClick={() => setShowUpload(true)}>+ Upload</Button>
+      <div className="mx-auto mb-8 flex max-w-[1400px] items-center justify-between px-4 pt-6 sm:px-6 sm:pt-8">
+        <h1 className="text-2xl font-bold text-zinc-900">Manga Viewer</h1>
+        <Button
+          type="button"
+          className="rounded-lg border-0 bg-zinc-900 px-5 font-medium text-white shadow-sm hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2"
+          onClick={() => setShowUpload(true)}
+        >
+          + Upload
+        </Button>
       </div>
 
       <Dialog open={showUpload} onOpenChange={() => !uploading && setShowUpload(false)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Upload Manga (ZIP)</DialogTitle>
+        <DialogContent className="gap-0 sm:max-w-md">
+          <DialogHeader className="space-y-1.5 pb-4">
+            <DialogTitle>上传漫画（ZIP）</DialogTitle>
             <DialogDescription>
-              Drag and drop a ZIP file containing manga images
+              章节图为「漫画名/章节名/图片」。封面可放「漫画名/cover.jpg」（与章节文件夹同级）；也可放在某一章目录内。
             </DialogDescription>
           </DialogHeader>
           {uploading && progress ? (
-            <div className="space-y-4 py-4">
-              <p className="text-sm">Uploading {progress.current}/{progress.total}</p>
+            <div className="space-y-3 pb-4">
+              <p className="text-sm text-zinc-700">
+                上传中 {progress.current}/{progress.total}
+              </p>
               <Progress value={(progress.current / progress.total) * 100} />
-              <p className="text-xs text-muted-foreground truncate">{progress.currentFile}</p>
+              <p className="truncate text-xs text-zinc-500">{progress.currentFile}</p>
             </div>
           ) : (
             <div
-              className={`drop-zone ${uploading ? 'disabled' : ''}`}
+              className={`rounded-xl border-2 border-dashed border-zinc-300 bg-zinc-50/50 px-6 py-10 text-center transition-colors hover:border-zinc-400 hover:bg-zinc-50 ${uploading ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
               onDrop={handleDrop}
               onDragOver={e => e.preventDefault()}
               onClick={() => !uploading && fileInputRef.current?.click()}
             >
-              <p>Drag & drop ZIP file here</p>
-              <p className="hint">or click to select</p>
-              <p className="hint">Format: 漫画名/章节名/*.jpg</p>
+              <p className="font-medium text-zinc-800">拖放 ZIP 到此处</p>
+              <p className="mt-2 text-sm text-zinc-500">或点击选择文件</p>
+              <p className="mt-3 text-xs leading-relaxed text-zinc-400">
+                示例：我的漫画/cover.jpg · 我的漫画/第1话/001.jpg
+              </p>
             </div>
           )}
           <input
@@ -348,198 +409,68 @@ export default function Home() {
             style={{ display: 'none' }}
             onChange={handleFileSelect}
           />
-          <Button
-            variant="outline"
-            onClick={() => setShowUpload(false)}
-            disabled={uploading}
-          >
-            Cancel
-          </Button>
+          <DialogFooter className="gap-2 border-t border-zinc-100 pt-4 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 rounded-lg border-zinc-200 bg-white text-zinc-700 shadow-none hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-zinc-400"
+              onClick={() => setShowUpload(false)}
+              disabled={uploading}
+            >
+              取消
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <div className="manga-list">
-        {mangaList.map((manga) => (
-          <div
-            key={manga.name}
-            className="manga-card"
-            onClick={() => handleMangaClick(manga)}
-          >
-            <span className="manga-name">{manga.name}</span>
-            <span className="manga-chapters">{manga.chapterCount} chapters</span>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="delete-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                setConfirmDelete(manga.name);
-              }}
-            >
-              ×
-            </Button>
-          </div>
-        ))}
+      <div className="mx-auto w-full max-w-[1400px] px-4 pb-12 sm:px-6">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+          {mangaList.map((manga) => (
+            <div key={manga.name} className="group w-full">
+              <div
+                className="cursor-pointer"
+                onClick={() => handleMangaClick(manga)}
+              >
+                <div className="relative aspect-[3/4] w-full overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 shadow-sm transition-shadow group-hover:shadow-md">
+                  {manga.coverUrl ? (
+                    <img
+                      src={manga.coverUrl}
+                      alt=""
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center px-2 text-center text-xs text-zinc-400">
+                      {manga.name}
+                    </div>
+                  )}
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="secondary"
+                    className="absolute right-1 top-1 z-10 h-7 w-7 rounded-full opacity-0 shadow-md transition-opacity group-hover:opacity-100"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmDelete(manga.name);
+                    }}
+                    aria-label="Delete"
+                  >
+                    ×
+                  </Button>
+                </div>
+                <p className="mt-2 line-clamp-2 text-center text-sm font-medium text-zinc-900">
+                  {manga.name}
+                </p>
+                <p className="text-center text-xs text-zinc-500">{manga.chapterCount} 章</p>
+              </div>
+            </div>
+          ))}
+        </div>
         {mangaList.length === 0 && (
-          <p className="empty">No manga found</p>
+          <p className="mt-16 text-center text-zinc-400">暂无漫画</p>
         )}
       </div>
-
-      <style>{`
-        .home {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          min-height: 100vh;
-          padding: 20px;
-          background: #1a1a1a;
-          color: #fff;
-        }
-        .toast {
-          position: fixed;
-          top: 20px;
-          left: 50%;
-          transform: translateX(-50%);
-          padding: 12px 24px;
-          border-radius: 8px;
-          font-size: 14px;
-          z-index: 200;
-          animation: fadeIn 0.2s ease;
-        }
-        .toast-success { background: #4a9; }
-        .toast-error { background: #c44; }
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
-          to { opacity: 1; transform: translateX(-50%) translateY(0); }
-        }
-        .header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          width: 100%;
-          max-width: 500px;
-          margin-bottom: 20px;
-        }
-        .header h1 { margin: 0; }
-        .upload-btn {
-          padding: 10px 20px;
-          background: #4a9;
-          border: none;
-          border-radius: 6px;
-          color: #fff;
-          font-size: 14px;
-          font-weight: 500;
-          cursor: pointer;
-          transition: background 0.2s;
-        }
-        .upload-btn:hover { background: #5ab; }
-        .modal-overlay {
-          position: fixed;
-          top: 0; left: 0; right: 0; bottom: 0;
-          background: rgba(0,0,0,0.8);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 100;
-        }
-        .modal {
-          background: #2a2a2a;
-          padding: 30px;
-          border-radius: 12px;
-          width: 90%;
-          max-width: 400px;
-          text-align: center;
-        }
-        .confirm-modal { padding: 20px; }
-        .confirm-modal p { margin: 0 0 20px; }
-        .confirm-buttons {
-          display: flex;
-          gap: 10px;
-          justify-content: center;
-        }
-        .modal h2 { margin: 0 0 20px; }
-        .drop-zone {
-          border: 2px dashed #666;
-          border-radius: 8px;
-          padding: 40px 20px;
-          cursor: pointer;
-          transition: border-color 0.2s, background 0.2s;
-          margin-bottom: 20px;
-        }
-        .drop-zone:hover:not(.disabled) {
-          border-color: #4a9;
-          background: rgba(74, 153, 137, 0.1);
-        }
-        .drop-zone.disabled { cursor: not-allowed; opacity: 0.6; }
-        .drop-zone .hint { color: #888; font-size: 12px; margin: 8px 0 0; }
-        .progress-container { margin-bottom: 20px; }
-        .progress-container p { margin: 8px 0; }
-        .current-file { color: #888; font-size: 12px; word-break: break-all; }
-        .progress-bar {
-          width: 100%;
-          height: 8px;
-          background: #444;
-          border-radius: 4px;
-          overflow: hidden;
-          margin-top: 10px;
-        }
-        .progress-fill {
-          height: 100%;
-          background: #4a9;
-          transition: width 0.2s;
-        }
-        .cancel-btn {
-          padding: 10px 20px;
-          background: #444;
-          border: none;
-          border-radius: 6px;
-          color: #fff;
-          font-size: 14px;
-          cursor: pointer;
-        }
-        .cancel-btn:hover { background: #555; }
-        .delete-confirm-btn {
-          padding: 10px 20px;
-          background: #c44;
-          border: none;
-          border-radius: 6px;
-          color: #fff;
-          font-size: 14px;
-          cursor: pointer;
-        }
-        .delete-confirm-btn:hover { background: #d55; }
-        .manga-list {
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-          width: 100%;
-          max-width: 500px;
-        }
-        .manga-card {
-          display: flex;
-          align-items: center;
-          padding: 16px;
-          background: #2a2a2a;
-          border: 1px solid #444;
-          border-radius: 8px;
-          cursor: pointer;
-          transition: background 0.2s;
-          position: relative;
-        }
-        .manga-card:hover { background: #3a3a3a; }
-        .manga-name { flex: 1; font-weight: 500; }
-        .manga-chapters { color: #888; font-size: 14px; margin-right: 12px; }
-        .delete-btn {
-          width: 28px; height: 28px;
-          background: #444; border: none; border-radius: 4px;
-          color: #fff; font-size: 18px; cursor: pointer;
-          opacity: 0;
-          transition: opacity 0.2s, background 0.2s;
-        }
-        .manga-card:hover .delete-btn { opacity: 1; }
-        .delete-btn:hover { background: #c44; }
-        .empty { color: #666; text-align: center; margin-top: 40px; }
-      `}</style>
     </div>
   );
 }
