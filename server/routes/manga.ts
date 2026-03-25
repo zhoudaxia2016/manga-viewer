@@ -11,12 +11,23 @@ function sortChapterImages(images: { name: string; url: string }[]): { name: str
 }
 
 async function getChaptersFromKv(kv: Deno.Kv, mangaName: string): Promise<{ id: string; name: string; images: string[] }[]> {
-  const chapters: { id: string; name: string; images: string[] }[] = [];
+  const chapterKeys: Deno.KvKey[] = [];
   
   const iter = kv.list({ prefix: ['manga', mangaName, 'chapters'] });
   for await (const entry of iter) {
     if (entry.key.length === 4 && entry.key[0] === 'manga' && entry.key[1] === mangaName && entry.key[2] === 'chapters') {
-      const chapterData = entry.value as { name: string; images: { name: string; url: string }[] };
+      chapterKeys.push(entry.key);
+    }
+  }
+  
+  if (chapterKeys.length === 0) return [];
+  
+  const chapterResults = await kv.getMany(chapterKeys);
+  
+  const chapters: { id: string; name: string; images: string[] }[] = [];
+  for (const result of chapterResults) {
+    if (result.value) {
+      const chapterData = result.value as { name: string; images: { name: string; url: string }[] };
       const names = chapterData.images.map((i) => i.name);
       names.sort(compareImageFileName);
       chapters.push({
@@ -53,12 +64,17 @@ async function getCoverUrlForManga(
   }
 
   const list = chapters ?? await getChaptersFromKv(kv, mangaName);
+  if (list.length === 0) return null;
+
+  // Batch load all chapter data at once using getMany
+  const chapterKeys = list.map((ch) => ['manga', mangaName, 'chapters', ch.id] as Deno.KvKey);
+  const chapterResults = await kv.getMany(chapterKeys);
+
   let firstChapterFirstUrl: string | null = null;
 
-  for (const ch of list) {
-    const chapter = await kv.get(['manga', mangaName, 'chapters', ch.id]);
-    if (!chapter.value) continue;
-    const chapterData = chapter.value as { name: string; images: { name: string; url: string }[] };
+  for (const result of chapterResults) {
+    if (!result.value) continue;
+    const chapterData = result.value as { name: string; images: { name: string; url: string }[] };
     const sorted = sortChapterImages(chapterData.images);
     const cover = sorted.find((i) => isCoverJpgFileName(i.name));
     if (cover) return cover.url;
