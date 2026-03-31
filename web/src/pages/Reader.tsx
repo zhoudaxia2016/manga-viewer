@@ -10,6 +10,12 @@ import {
   SelectItem,
   SelectValue,
 } from '@/components/ui/select';
+import { ReaderContextMenu } from '@/components/reader/ReaderContextMenu';
+import type { OcrLookupScrollSource } from '@/components/reader/readerAnchors';
+import { LookupResultSheet } from '@/components/reader/LookupResultSheet';
+import { detectBubbles } from '@/lib/bubbleDetector';
+import { cropImageFromImg } from '@/lib/cropImageFromImg';
+import { recognizeJapaneseFromBlob } from '@/lib/ocrJapanese';
 
 interface Chapter {
   id: string;
@@ -29,9 +35,31 @@ export default function Reader() {
   const [showControls, setShowControls] = useState(true);
   const [currentPage, setCurrentPage] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+
+  const [contextMenu, setContextMenu] = useState<{
+    open: boolean;
+    x: number;
+    y: number;
+    imageIdx: number;
+  }>({
+    open: false,
+    x: 0,
+    y: 0,
+    imageIdx: -1,
+  });
+  const [ocrPhase, setOcrPhase] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
+  const [ocrText, setOcrText] = useState('');
+  const [ocrError, setOcrError] = useState<string | null>(null);
+  const [lookupOpen, setLookupOpen] = useState(false);
+  const [lookupScrollSource, setLookupScrollSource] = useState<OcrLookupScrollSource | null>(null);
+
+  const imageRefs = useRef<(HTMLImageElement | null)[]>([]);
+
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const scrollRef = useRef<HTMLDivElement>(null);
+  /** state 驱动，保证 OCR 弹窗 portal 首帧即有挂载节点 */
+  const [readerScrollContentEl, setReaderScrollContentEl] = useState<HTMLDivElement | null>(null);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
   const mangaName = searchParams.get('name');
@@ -94,12 +122,10 @@ export default function Reader() {
     if (hideTimeoutRef.current) {
       clearTimeout(hideTimeoutRef.current);
     }
-    if (showControls) {
-      hideTimeoutRef.current = setTimeout(() => {
-        setShowControls(false);
-      }, 3000);
-    }
-  }, [showControls]);
+    hideTimeoutRef.current = setTimeout(() => {
+      setShowControls(false);
+    }, 3000);
+  }, []);
 
   const handleScroll = useCallback(() => {
     if (!scrollRef.current || images.length === 0) return;
@@ -113,8 +139,11 @@ export default function Reader() {
 
   const toggleControls = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    setShowControls(prev => !prev);
     if (showControls) {
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+        hideTimeoutRef.current = undefined;
+      }
       setShowControls(false);
     } else {
       setShowControls(true);
@@ -133,6 +162,122 @@ export default function Reader() {
       setCurrentChapter(manga.chapters[currentChapterIndex + 1]);
     }
   };
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const target = e.target as HTMLElement;
+    const imgEl = target.closest('img') as HTMLImageElement | null;
+    const imageIdx = imgEl ? parseInt(imgEl.getAttribute('data-idx') ?? '-1', 10) : -1;
+    if (!imgEl || imageIdx < 0) return;
+
+    setContextMenu({
+      open: true,
+      x: e.clientX,
+      y: e.clientY,
+      imageIdx,
+    });
+  }, []);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(prev => ({ ...prev, open: false }));
+  }, []);
+
+  const debugOverlayRef = useRef<HTMLDivElement | null>(null);
+
+  const showDebugRect = useCallback((imgEl: HTMLImageElement, crop: { x: number; y: number; width: number; height: number }) => {
+    debugOverlayRef.current?.remove();
+    const imgRect = imgEl.getBoundingClientRect();
+    const div = document.createElement('div');
+    Object.assign(div.style, {
+      position: 'fixed',
+      left: `${imgRect.left + crop.x}px`,
+      top: `${imgRect.top + crop.y}px`,
+      width: `${crop.width}px`,
+      height: `${crop.height}px`,
+      border: '2px solid #ff0',
+      background: 'rgba(255,255,0,0.12)',
+      pointerEvents: 'none',
+      zIndex: '9999',
+      transition: 'opacity 0.3s',
+    });
+    document.body.appendChild(div);
+    debugOverlayRef.current = div;
+    setTimeout(() => { div.style.opacity = '0'; }, 3000);
+    setTimeout(() => { div.remove(); }, 3500);
+  }, []);
+
+  const handleLookupOpenChange = useCallback((open: boolean) => {
+    setLookupOpen(open);
+    if (!open) setLookupScrollSource(null);
+  }, []);
+
+  const handleTranslateStart = useCallback(async () => {
+    const { x, y, imageIdx } = contextMenu;
+    const imgEl = imageRefs.current[imageIdx];
+    if (!imgEl) return;
+
+    const rect = imgEl.getBoundingClientRect();
+    const clickX = x - rect.left;
+    const clickY = y - rect.top;
+
+    const fallbackCrop = () => {
+      const cropW = Math.min(300, imgEl.clientWidth * 0.4);
+      const cropH = Math.min(250, imgEl.clientHeight * 0.25);
+      const cx = Math.max(0, Math.min(clickX - cropW / 2, imgEl.clientWidth - cropW));
+      const cy = Math.max(0, Math.min(clickY - cropH / 2, imgEl.clientHeight - cropH));
+      return {
+        x: cx,
+        y: cy,
+        width: Math.min(cropW, imgEl.clientWidth - cx),
+        height: Math.min(cropH, imgEl.clientHeight - cy),
+      };
+    };
+
+    if (!imgEl.naturalWidth || !imgEl.clientWidth || !imgEl.naturalHeight || !imgEl.clientHeight) {
+      setLookupScrollSource(null);
+      setOcrPhase('error');
+      setOcrError('图片尚未加载，请稍后重试');
+      setLookupOpen(true);
+      closeContextMenu();
+      return;
+    }
+
+    let cropRect: { x: number; y: number; width: number; height: number };
+    try {
+      const bubble = await detectBubbles(imgEl, clickX, clickY);
+      console.debug('[translate] clickX:', clickX, 'clickY:', clickY, '→ bubble:', bubble);
+      if (bubble) {
+        cropRect = { x: bubble.x, y: bubble.y, width: bubble.width, height: bubble.height };
+      } else {
+        cropRect = fallbackCrop();
+      }
+    } catch {
+      cropRect = fallbackCrop();
+    }
+
+    setLookupScrollSource({
+      imageIdx,
+      cropDisplay: { ...cropRect },
+    });
+
+    setOcrPhase('loading');
+    setLookupOpen(true);
+    closeContextMenu();
+
+    try {
+      console.debug('[translate] cropRect (display):', cropRect);
+      showDebugRect(imgEl, cropRect);
+
+      const blob = await cropImageFromImg(imgEl, cropRect);
+      console.debug('[translate] crop blob size:', blob.size, 'bytes');
+      const text = await recognizeJapaneseFromBlob(blob);
+      setOcrText(text);
+      setOcrPhase('done');
+    } catch (err) {
+      setOcrPhase('error');
+      setOcrError(err instanceof Error ? err.message : 'OCR 识别失败');
+    }
+  }, [contextMenu, closeContextMenu, showDebugRect]);
 
   useEffect(() => {
     return () => {
@@ -193,9 +338,10 @@ export default function Reader() {
         ref={scrollRef}
         onScroll={handleScroll}
         onClick={toggleControls}
+        onContextMenu={handleContextMenu}
         className="h-screen overflow-y-auto"
       >
-        <div className="pb-20">
+        <div ref={setReaderScrollContentEl} className="relative pb-20">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
               <div className="w-8 h-8 border-2 border-neutral-100 border-t-transparent rounded-full animate-spin" />
@@ -205,9 +351,12 @@ export default function Reader() {
             images.map((img, idx) => (
               <img
                 key={idx}
+                data-idx={idx}
+                ref={el => { imageRefs.current[idx] = el; }}
                 src={img}
                 alt={`第 ${idx + 1} 页`}
                 loading={idx < 2 ? 'eager' : 'lazy'}
+                crossOrigin="anonymous"
                 className={`block w-full max-w-4xl mx-auto ${idx === 0 ? '' : 'mt-2 pt-4'}`}
               />
             ))
@@ -250,6 +399,26 @@ export default function Reader() {
           </Button>
         </div>
       </footer>
+
+      <ReaderContextMenu
+        open={contextMenu.open}
+        x={contextMenu.x}
+        y={contextMenu.y}
+        onClose={closeContextMenu}
+        onTranslate={handleTranslateStart}
+      />
+
+      <LookupResultSheet
+        open={lookupOpen}
+        onOpenChange={handleLookupOpenChange}
+        scrollSource={lookupScrollSource}
+        scrollContainerRef={scrollRef}
+        scrollContentEl={readerScrollContentEl}
+        imageRefs={imageRefs}
+        ocrPhase={ocrPhase}
+        ocrText={ocrText}
+        ocrError={ocrError}
+      />
     </div>
   );
 }
