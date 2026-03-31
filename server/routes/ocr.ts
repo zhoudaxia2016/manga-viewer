@@ -1,13 +1,7 @@
-import { corsHeaders } from '../lib/cors.ts';
-
 const OCR_API_URL = 'https://api.ocr.space/parse/image';
 const API_KEY = Deno.env.get('OCR_SPACE_API_KEY') ?? '';
 
 export async function handleOcr(req: Request): Promise<Response> {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
-
   let blob: Blob;
   try {
     const formData = await req.formData();
@@ -38,5 +32,5 @@ export async function handleOcr(req: Request): Promise<Response> {
   if (Deno.env.get('OCR_DEBUG') === '1') {
     console.debug('[OCR] ocr.space response:', JSON.stringify(data, null, 2));
   }
-  return Response.json(data, { headers: corsHeaders });
+  return Response.json(data);
 }

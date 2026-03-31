@@ -1,4 +1,4 @@
-import { API_BASE } from '@/config';
+import { apiFetch, apiUrl } from '@/lib/apiClient';
 
 /** Open in browser (no API); use when Jisho API fails or for comparison. */
 export function jishoWebSearchUrl(keyword: string): string {
@@ -36,13 +36,11 @@ export async function searchJisho(
   keyword: string,
   options?: { glossLang?: 'en' | 'zh' },
 ): Promise<JishoSearchResponse> {
-  const base = API_BASE.replace(/\/$/, '');
   const gloss = options?.glossLang ?? 'zh';
   const q =
-    `/api/jisho?keyword=${encodeURIComponent(keyword)}` +
+    `?keyword=${encodeURIComponent(keyword)}` +
     (gloss === 'zh' ? '&lang=zh' : '');
-  const url = base ? `${base}${q}` : q;
-  const res = await fetch(url);
+  const res = await apiFetch(apiUrl(`/api/jisho${q}`));
   if (!res.ok) {
     throw new Error(`词典请求失败 (${res.status})`);
   }
@@ -62,10 +60,8 @@ export interface MaziiSearchResponse {
 }
 
 export async function searchMazii(keyword: string): Promise<MaziiSearchResponse> {
-  const base = API_BASE.replace(/\/$/, '');
-  const q = `/api/mazii?keyword=${encodeURIComponent(keyword)}`;
-  const url = base ? `${base}${q}` : q;
-  const res = await fetch(url);
+  const q = `?keyword=${encodeURIComponent(keyword)}`;
+  const res = await apiFetch(apiUrl(`/api/mazii${q}`));
   if (!res.ok) {
     throw new Error(`Mazii 请求失败 (${res.status})`);
   }

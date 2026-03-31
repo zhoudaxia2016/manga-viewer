@@ -1,6 +1,5 @@
 import type { JapaneseOcrBackend } from '../types';
-
-const OCR_API_URL = '/api/ocr';
+import { apiFetch, apiUrl } from '@/lib/apiClient';
 const MAX_UPLOAD_BYTES = 950_000;
 
 async function preprocessImage(blob: Blob): Promise<Blob> {
@@ -85,7 +84,7 @@ export const ocrSpaceBackend: JapaneseOcrBackend = {
     form.append('file', processed, 'image.png');
     form.append('language', 'jpn');
 
-    const res = await fetch(OCR_API_URL, {
+    const res = await apiFetch(apiUrl('/api/ocr'), {
       method: 'POST',
       body: form,
       signal: AbortSignal.timeout(120_000),
