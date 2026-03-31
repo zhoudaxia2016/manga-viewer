@@ -1,4 +1,4 @@
-import { corsHeaders, json } from '../lib/cors.ts';
+import { json } from '../lib/cors.ts';
 import { getKv } from '../lib/kv.ts';
 
 /** 阅读顺序：按文件名自然序（p2 在 p10 前） */

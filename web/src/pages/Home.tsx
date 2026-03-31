@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Toast, ToastContainer } from '@/components/ui/toast';
-import { API_BASE, isProdApiUrlMissing, PROD_API_URL_HINT } from '@/config';
+import { isProdApiUrlMissing, PROD_API_URL_HINT } from '@/config';
+import { useApiAuth } from '@/contexts/ApiAuthContext';
+import { apiFetch, apiUrl } from '@/lib/apiClient';
 
 interface Manga {
   name: string;
@@ -42,7 +44,7 @@ async function postUploadWithRetry(url: string, formData: FormData): Promise<Res
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     let res: Response;
     try {
-      res = await fetch(url, { method: 'POST', body: formData });
+      res = await apiFetch(url, { method: 'POST', body: formData });
     } catch (e) {
       if (attempt === maxAttempts - 1) {
         throw e instanceof Error ? e : new Error(String(e));
@@ -88,6 +90,10 @@ type ZipUploadItem =
     };
 
 export default function Home() {
+  const { ready, authRequired, authenticated, login, logout } = useApiAuth();
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginBusy, setLoginBusy] = useState(false);
   const [mangaList, setMangaList] = useState<Manga[]>([]);
   const [showUpload, setShowUpload] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -109,7 +115,12 @@ export default function Home() {
 
   const fetchMangaList = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/manga`);
+      const res = await apiFetch(apiUrl('/api/manga'));
+      if (res.status === 429) {
+        const j = (await res.json().catch(() => ({}))) as { message?: string };
+        showToast(j.message || '请求次数已达今日上限，请登录', 'error');
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         setMangaList(data);
@@ -122,6 +133,21 @@ export default function Home() {
       );
     }
   }, [showToast]);
+
+  const handleLoginSubmit = useCallback(async () => {
+    setLoginBusy(true);
+    try {
+      await login(loginPassword);
+      setLoginPassword('');
+      setLoginOpen(false);
+      showToast('已登录', 'success');
+      await fetchMangaList();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '登录失败', 'error');
+    } finally {
+      setLoginBusy(false);
+    }
+  }, [login, loginPassword, showToast, fetchMangaList]);
 
   const handleFileUpload = useCallback(async (file: File) => {
     if (!file.name.endsWith('.zip')) {
@@ -212,7 +238,7 @@ export default function Home() {
         }
 
         try {
-          const res = await postUploadWithRetry(`${API_BASE}/api/upload`, formData);
+          const res = await postUploadWithRetry(apiUrl('/api/upload'), formData);
           if (!res.ok) {
             const msg = await parseUploadErrorResponse(res);
             failed.push({
@@ -280,10 +306,15 @@ export default function Home() {
 
   const handleDelete = useCallback(async (mangaName: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/manga/${encodeURIComponent(mangaName)}`, { method: 'DELETE' });
+      const res = await apiFetch(apiUrl(`/api/manga/${encodeURIComponent(mangaName)}`), {
+        method: 'DELETE',
+      });
       if (res.ok) {
         setMangaList(prev => prev.filter(m => m.name !== mangaName));
         showToast('删除成功', 'success');
+      } else if (res.status === 429) {
+        const j = (await res.json().catch(() => ({}))) as { message?: string };
+        showToast(j.message || '今日操作次数已达上限', 'error');
       } else {
         showToast('删除失败', 'error');
       }
@@ -360,16 +391,79 @@ export default function Home() {
         </DialogContent>
       </Dialog>
 
-      <div className="mx-auto mb-8 flex max-w-[1400px] items-center justify-between px-4 pt-6 sm:px-6 sm:pt-8">
+      <div className="mx-auto mb-8 flex max-w-[1400px] flex-wrap items-center justify-between gap-3 px-4 pt-6 sm:px-6 sm:pt-8">
         <h1 className="text-2xl font-bold text-zinc-900">漫画阅读器</h1>
-        <Button
-          type="button"
-          className="rounded-lg border-0 bg-zinc-900 px-5 font-medium text-white shadow-sm hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2"
-          onClick={() => setShowUpload(true)}
-        >
-          + 上传
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {ready && authRequired && !authenticated && (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 rounded-lg border-zinc-200 bg-white text-zinc-800 shadow-none hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-zinc-400"
+              onClick={() => setLoginOpen(true)}
+            >
+              登录
+            </Button>
+          )}
+          {ready && authRequired && authenticated && (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 rounded-lg border-zinc-200 bg-white text-zinc-700 shadow-none hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-zinc-400"
+              onClick={() => void logout()}
+            >
+              退出
+            </Button>
+          )}
+          <Button
+            type="button"
+            className="rounded-lg border-0 bg-zinc-900 px-5 font-medium text-white shadow-sm hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2"
+            onClick={() => setShowUpload(true)}
+          >
+            + 上传
+          </Button>
+        </div>
       </div>
+
+      <Dialog open={loginOpen} onOpenChange={(o) => !loginBusy && setLoginOpen(o)}>
+        <DialogContent className="gap-0 sm:max-w-md">
+          <DialogHeader className="space-y-1.5 pb-4">
+            <DialogTitle>登录</DialogTitle>
+            <DialogDescription>
+              输入访问密码。未登录时接口有每日次数上限，登录后不限。
+            </DialogDescription>
+          </DialogHeader>
+          <input
+            type="password"
+            autoComplete="current-password"
+            placeholder="密码"
+            value={loginPassword}
+            onChange={(e) => setLoginPassword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !loginBusy) void handleLoginSubmit();
+            }}
+            className="mb-4 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none ring-zinc-400 focus:ring-2"
+          />
+          <DialogFooter className="gap-2 border-t border-zinc-100 pt-4 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 rounded-lg border-zinc-200 bg-white"
+              onClick={() => setLoginOpen(false)}
+              disabled={loginBusy}
+            >
+              取消
+            </Button>
+            <Button
+              type="button"
+              className="h-9 rounded-lg border-0 bg-zinc-900 text-white"
+              disabled={loginBusy || !loginPassword.trim()}
+              onClick={() => void handleLoginSubmit()}
+            >
+              {loginBusy ? '…' : '确定'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showUpload} onOpenChange={() => !uploading && setShowUpload(false)}>
         <DialogContent className="gap-0 sm:max-w-md">

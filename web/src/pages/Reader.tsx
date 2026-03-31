@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { API_BASE } from '@/config';
+import { apiFetch, apiUrl } from '@/lib/apiClient';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import {
@@ -80,7 +80,7 @@ export default function Reader() {
       return;
     }
 
-    fetch(`${API_BASE}/api/manga/${encodeURIComponent(mangaName)}`)
+    apiFetch(apiUrl(`/api/manga/${encodeURIComponent(mangaName)}`))
       .then(res => res.json())
       .then(data => {
         if (data.error) {
@@ -103,7 +103,11 @@ export default function Reader() {
     if (!currentChapter || !mangaName) return;
 
     setIsLoading(true);
-    fetch(`${API_BASE}/api/manga/${encodeURIComponent(mangaName)}/${encodeURIComponent(currentChapter.id)}/images`)
+    apiFetch(
+        apiUrl(
+          `/api/manga/${encodeURIComponent(mangaName)}/${encodeURIComponent(currentChapter.id)}/images`,
+        ),
+      )
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
