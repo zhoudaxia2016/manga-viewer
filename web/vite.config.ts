@@ -69,9 +69,13 @@ export default defineConfig(({ mode }) => ({
     }),
   ],
   resolve: {
+    dedupe: ['react', 'react-dom'],
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+  },
+  optimizeDeps: {
+    include: ['react', 'react-dom', '@radix-ui/react-dropdown-menu'],
   },
   server: {
     host: '0.0.0.0',

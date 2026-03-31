@@ -2,10 +2,16 @@ import "dotenv/load.ts";
 import { corsHeaders, json } from './lib/cors.ts';
 import { handleMangaList, handleMangaInfo, handleChapterImages, handleImage, handleMangaDelete } from './routes/manga.ts';
 import { handleUpload } from './routes/upload.ts';
+import { handleOcr } from './routes/ocr.ts';
+import { handleJisho } from './routes/jisho.ts';
+import { handleMazii } from './routes/mazii.ts';
 
 const ROUTES: Record<string, { method: string; handler: (req: Request) => Promise<Response> }> = {
   '/api/manga': { method: 'GET', handler: handleMangaList },
   '/api/upload': { method: 'POST', handler: handleUpload },
+  '/api/ocr': { method: 'POST', handler: handleOcr },
+  '/api/jisho': { method: 'GET', handler: handleJisho },
+  '/api/mazii': { method: 'GET', handler: handleMazii },
 };
 
 const PORT = parseInt(Deno.env.get('PORT') ?? '8080', 10);

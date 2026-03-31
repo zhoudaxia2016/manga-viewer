@@ -149,7 +149,9 @@ async def crawl_manga(
         targets = [
             c
             for c in manga.chapters
-            if c.id in expanded_chapters or c.title in expanded_chapters
+            if c.id in expanded_chapters
+            or c.title in expanded_chapters
+            or any(exp.isdigit() and c.id == f"di{exp}hua" for exp in expanded_chapters)
         ]
         if not targets:
             print(f"未找到指定章节: {expanded_chapters}, 爬取第1话")

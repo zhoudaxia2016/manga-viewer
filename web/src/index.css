@@ -57,3 +57,22 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* OCR 查词面板内滚动条 */
+.lookup-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(64 64 64) rgb(23 23 23);
+}
+.lookup-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.lookup-scrollbar::-webkit-scrollbar-thumb {
+  background: rgb(64 64 64);
+  border-radius: 9999px;
+  border: 2px solid rgb(23 23 23);
+}
+.lookup-scrollbar::-webkit-scrollbar-track {
+  background: rgb(23 23 23);
+  border-radius: 9999px;
+}
