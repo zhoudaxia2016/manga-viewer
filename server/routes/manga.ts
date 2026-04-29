@@ -132,6 +132,35 @@ export async function handleChapterImages(req: Request, mangaName: string, chapt
   }
 }
 
+export async function handleImageProxy(req: Request): Promise<Response> {
+  try {
+    const url = new URL(req.url).searchParams.get('url');
+    if (!url) {
+      return json({ error: 'Missing url parameter' }, 400);
+    }
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      return json({ error: 'Failed to fetch image' }, response.status);
+    }
+
+    const imageData = await response.arrayBuffer();
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+
+    return new Response(imageData, {
+      status: 200,
+      headers: {
+        ...corsHeaders,
+        'content-type': contentType,
+        'cache-control': 'public, max-age=31536000',
+      },
+    });
+  } catch (err) {
+    console.error('Image proxy error:', err);
+    return json({ error: 'Failed to proxy image' }, 500);
+  }
+}
+
 export async function handleMangaDelete(req: Request, mangaName: string): Promise<Response> {
   try {
     const decodedName = decodeURIComponent(mangaName);

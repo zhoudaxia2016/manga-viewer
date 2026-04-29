@@ -10,6 +10,9 @@ import {
   SelectItem,
   SelectValue,
 } from '@/components/ui/select';
+import { SelectionOverlay } from '@/components/ocr/SelectionOverlay';
+import { VocabButton } from '@/components/ocr/VocabButton';
+import { OcrPopup } from '@/components/ocr/OcrPopup';
 
 interface Chapter {
   id: string;
@@ -29,6 +32,8 @@ export default function Reader() {
   const [showControls, setShowControls] = useState(true);
   const [currentPage, setCurrentPage] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -142,6 +147,31 @@ export default function Reader() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'd' || e.key === 'D') {
+        if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          setIsSelecting(prev => !prev);
+        }
+      }
+      if (e.key === 'Escape' && isSelecting) {
+        setIsSelecting(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isSelecting]);
+
+  const handleSelectionComplete = useCallback((imageDataUrl: string) => {
+    setIsSelecting(false);
+    setSelectedImageUrl(imageDataUrl);
+  }, []);
+
+  const handleCancelSelection = useCallback(() => {
+    setIsSelecting(false);
+  }, []);
+
   if (!manga || !currentChapter) {
     return (
       <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col items-center justify-center gap-4">
@@ -250,6 +280,25 @@ export default function Reader() {
           </Button>
         </div>
       </footer>
+
+      <SelectionOverlay
+        isActive={isSelecting}
+        targetRef={scrollRef}
+        onSelectionComplete={handleSelectionComplete}
+        onCancel={handleCancelSelection}
+      />
+
+      <VocabButton
+        onClick={() => setIsSelecting(prev => !prev)}
+        isSelecting={isSelecting}
+      />
+
+      {selectedImageUrl && (
+        <OcrPopup
+          imageDataUrl={selectedImageUrl}
+          onClose={() => setSelectedImageUrl(null)}
+        />
+      )}
     </div>
   );
 }

@@ -1,11 +1,12 @@
 import "dotenv/load.ts";
 import { corsHeaders, json } from './lib/cors.ts';
-import { handleMangaList, handleMangaInfo, handleChapterImages, handleImage, handleMangaDelete } from './routes/manga.ts';
+import { handleMangaList, handleMangaInfo, handleChapterImages, handleImage, handleMangaDelete, handleImageProxy } from './routes/manga.ts';
 import { handleUpload } from './routes/upload.ts';
 
 const ROUTES: Record<string, { method: string; handler: (req: Request) => Promise<Response> }> = {
   '/api/manga': { method: 'GET', handler: handleMangaList },
   '/api/upload': { method: 'POST', handler: handleUpload },
+  '/api/image': { method: 'GET', handler: handleImageProxy },
 };
 
 const PORT = parseInt(Deno.env.get('PORT') ?? '8080', 10);
